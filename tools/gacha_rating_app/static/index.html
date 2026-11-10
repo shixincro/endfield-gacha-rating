@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>终末地 · 抽卡记录评分</title><link rel="stylesheet" href="/style.css"><script defer src="/ui-model.js"></script><script defer src="/character-edit.js"></script><script defer src="/app.js"></script><script defer src="/manual-supplement.js"></script></head>
+<body>
+<header class="top"><h1 class="brand-heading"><a class="brand" href="/">ENDFIELD <span>抽卡记录评分</span></a></h1><span class="local">本机处理 · 不上传云端</span></header>
+<main>
+<section class="upload" id="dropzone"><label class="file-label" for="images"><strong>选择或拖入小黑盒长截图</strong><span>每张图对应一份独立记录 · PNG / JPG / WebP · 每批最多12张</span></label><input id="images" type="file" accept="image/png,image/jpeg,image/webp" multiple><div id="selection" class="muted">尚未选择截图</div><div class="actions"><button id="import" class="primary" disabled>开始识别</button><button id="openHistory" type="button" aria-haspopup="dialog" aria-controls="historyDialog">本机历史记录</button></div></section>
+<div id="notifications" class="toast-stack" popover="manual"><div id="status" role="status" aria-live="polite" hidden></div><div id="error" role="alert" hidden></div></div>
+<section id="workspace" hidden>
+<div class="section-head record-meta"><h2 id="recordTitle">识别结果</h2>
+  <div class="actions">
+    <button id="openResults" type="button" aria-haspopup="dialog" aria-controls="resultsDialog">限定池识别结果</button>
+    <button id="weaponConfigured" class="weapon-config-button" type="button" aria-haspopup="dialog" aria-controls="resultsDialog" aria-pressed="false" disabled>武器修正</button>
+    <button id="manualSupplement" type="button" aria-haspopup="dialog" aria-controls="manualSupplementDialog" disabled>手动补充记录</button>
+    <button id="exportRadar" type="button" disabled>保存结果</button>
+    <button id="save" type="button">保存记录JSON</button>
+  </div>
+</div>
+<p id="interruptionNotice" class="interruption-notice" role="status" hidden></p>
+<div class="result-grid" id="resultCapture">
+  <section class="panel planning-score-panel">
+    <h2>规划亏损</h2>
+    <div id="planningHighlights" class="planning-highlights" aria-live="polite"></div>
+    <div id="planningBreakdown" class="planning-breakdown" hidden>
+      <div id="planningRankHeader" class="planning-rank-header"><h3>亏损最多 <span>TOP 5</span></h3><button id="openAllPlanning" class="view-all-planning" type="button" aria-haspopup="dialog" aria-controls="planningAllDialog">查看全部</button></div>
+      <div id="planningTopPools" class="planning-top-list"></div>
+    </div>
+  </section>
+  <section class="panel radar-panel">
+    <div class="section-head"><h2>六维欧非</h2></div>
+    <div id="calculating" role="status" aria-live="polite" hidden>正在计算…</div>
+    <div id="radarRevealArea" class="radar-reveal-area is-concealed">
+      <div id="luckContent" class="luck-content concealed" aria-hidden="true" inert>
+        <h3 id="luckTitle" class="rating-title luck-title"></h3>
+        <div id="radar"></div>
+      </div>
+      <button id="revealLuck" class="reveal-luck primary" type="button">显示欧非评价</button>
+    </div>
+  </section>
+</div>
+<dialog id="resultsDialog" class="review-dialog results-dialog" aria-labelledby="resultsDialogTitle">
+  <div class="dialog-header">
+    <h2 id="resultsDialogTitle">限定池识别结果</h2>
+    <div id="characterTabs" class="results-tabs" role="tablist" aria-label="限定池识别结果">
+      <button id="resultsCharacterTab" type="button" role="tab" aria-selected="true" aria-controls="characterResultsPanel">识别结果</button>
+      <button id="interruptionTab" type="button" role="tab" aria-selected="false" aria-controls="interruptionReview" tabindex="-1">中断修正</button>
+      <button id="initialHistoryTab" type="button" role="tab" aria-selected="false" aria-controls="initialHistory" tabindex="-1">首池信息</button>
+      <button id="summaryTab" type="button" role="tab" aria-selected="false" aria-controls="summaryReview" tabindex="-1">顶部信息</button>
+    </div>
+    <p id="draftValidationSummary" class="draft-validation" role="status" aria-live="polite" hidden></p>
+  </div>
+  <div class="dialog-scroll">
+    <div id="currentGlobalIssues" class="current-global-issues" hidden></div>
+    <div id="characterDialogError" class="dialog-error" role="alert" hidden></div>
+    <section id="characterResultsPanel" role="tabpanel" aria-labelledby="resultsCharacterTab" tabindex="0">
+      <p id="characterIssueProgress" class="issue-progress" role="status" hidden></p>
+      <div id="characterEvidence" class="pool-evidence" hidden></div>
+      <div id="unresolvedPoolCards" class="unresolved-pool-cards" hidden></div>
+      <div id="manualPoolTools" class="manual-pool-tools"></div>
+      <div id="review"></div>
+    </section>
+    <section id="interruptionReview" role="tabpanel" aria-labelledby="interruptionTab" tabindex="0" hidden></section>
+    <section id="initialHistory" role="tabpanel" aria-labelledby="initialHistoryTab" tabindex="0" hidden></section>
+    <section id="summaryReview" role="tabpanel" aria-labelledby="summaryTab" tabindex="0" hidden></section>
+    <section id="weaponResultsPanel" hidden>
+      <div id="weaponDialogError" class="dialog-error" role="alert" hidden></div>
+      <div id="weaponReview"></div>
+      <div id="weaponScoreDetails" aria-live="polite"></div>
+    </section>
+  </div>
+  <div class="dialog-footer">
+    <p id="resultsSaveHint" class="muted small">修改仅在保存后生效。</p>
+    <div class="actions"><button id="resultsCancel" type="button">取消</button><button id="resultsApply" type="button" class="primary">保存修改</button></div>
+  </div>
+</dialog>
+<dialog id="manualSupplementDialog" class="review-dialog" aria-label="手动补充记录"></dialog>
+<dialog id="hypothesisDialog" class="review-dialog hypothesis-dialog" aria-labelledby="hypothesisTitle">
+  <div class="dialog-header"><h2 id="hypothesisTitle">假设补到保底</h2><p class="muted small">勾选启用后按假设结果评分。</p></div>
+  <div class="dialog-scroll">
+    <div id="hypothesisControls" class="pool-meta"></div>
+    <p id="hypothesisStatus" class="muted small" role="status" aria-live="polite"></p>
+    <div id="hypothesisError" class="dialog-error" role="alert" hidden></div>
+    <div id="hypothesisPlan"></div><div id="hypothesisChoices" class="hypothesis-events"></div>
+    <div id="hypothesisNotices" class="hypothesis-notices"></div>
+    <div class="hypothesis-activation"><label class="check"><input id="hypothesisEnabled" type="checkbox">启用假设补到保底</label><p id="hypothesisApplyHint" class="muted small"></p><button id="hypothesisApply" type="button" hidden>应用当前假设设置</button></div>
+    <div id="hypothesisComparison" aria-live="polite"></div>
+  </div>
+  <div class="dialog-footer"><p class="muted small">取消勾选可恢复实际评分。</p><div class="actions"><button type="button" data-close-dialog="hypothesisDialog">关闭</button><button id="hypothesisPreview" type="button" disabled>先预览评分变化</button></div></div>
+</dialog>
+<dialog id="planningDetailDialog" class="review-dialog planning-detail-dialog" aria-labelledby="planningDetailTitle">
+  <div class="dialog-header"><h2 id="planningDetailTitle">卡池亏损详情</h2></div>
+  <div class="dialog-scroll"><div id="scoringScenario" class="scoring-scenario" aria-live="polite" hidden></div><div id="planningDetailContent"></div></div>
+  <div class="dialog-footer"><div class="actions"><button type="button" data-close-dialog="planningDetailDialog">关闭</button></div></div>
+</dialog>
+<dialog id="planningAllDialog" class="review-dialog" aria-labelledby="planningAllTitle">
+  <div class="dialog-header"><h2 id="planningAllTitle">全部规划亏损</h2></div>
+  <div class="dialog-scroll"><div id="planning"></div></div>
+  <div class="dialog-footer"><div class="actions"><button type="button" data-close-dialog="planningAllDialog">关闭</button></div></div>
+</dialog>
+</section>
+<dialog id="historyDialog" class="review-dialog history-dialog" aria-labelledby="historyDialogTitle">
+  <div class="dialog-header"><h2 id="historyDialogTitle">本机保存的记录</h2><p class="muted small">打开之前识别的记录，或导入保存过的记录 JSON。</p></div>
+  <div class="dialog-scroll">
+    <div class="history-toolbar"><label class="check"><input id="historySelectAll" type="checkbox" disabled><span id="historySelectAllText">全选</span></label><span id="historySelectionCount" class="muted small">共0份，已选0份</span><button id="historyDelete" class="danger" type="button" disabled>删除选中（0）</button></div>
+    <p id="historyDeleteFeedback" class="history-feedback small" role="status" aria-live="polite" hidden></p>
+    <section id="historyDeleteConfirmation" class="history-delete-confirm" role="alertdialog" aria-labelledby="historyDeleteTitle" aria-describedby="historyDeleteDescription" hidden>
+      <h3 id="historyDeleteTitle">确认删除本机记录</h3><p id="historyDeleteDescription">将删除这些本机记录及不再共用的原图、裁片，无法恢复。与其他记录共用的图片会保留，已导出的 JSON 文件不受影响。</p><ul id="historyDeleteNames"></ul>
+      <div class="actions"><button id="historyDeleteCancel" type="button">取消</button><button id="historyDeleteConfirm" class="danger" type="button">确认删除</button></div>
+    </section>
+    <div id="history" class="history muted">正在读取…</div>
+  </div>
+  <div class="dialog-footer"><button id="restore" type="button">导入记录 JSON</button><input id="restoreFile" type="file" accept="application/json,.json" hidden><div class="actions"><button type="button" data-close-dialog="historyDialog">关闭</button></div></div>
+</dialog>
+</main>
+</body></html>

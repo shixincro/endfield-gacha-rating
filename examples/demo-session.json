@@ -1,0 +1,274 @@
+{
+  "schemaVersion": "gacha-rating-session-v1",
+  "id": "00000000000000000000000000000000",
+  "revision": 1,
+  "updatedAt": 0,
+  "documents": [
+    {
+      "file": "合成演示记录",
+      "kind": "synthetic-example",
+      "identity": {
+        "name": "演示账号",
+        "uid": "demo-account"
+      },
+      "issues": [],
+      "pools": [
+        {
+          "banner": "熔火灼痕",
+          "total": 60,
+          "tail": 20,
+          "tail_known": true,
+          "quota": 5000,
+          "events": [
+            {
+              "pulls": 40,
+              "character": "莱万汀",
+              "off": false,
+              "identitySource": "synthetic-example"
+            }
+          ],
+          "rush": [],
+          "rushUsed": true,
+          "rushAt": 30,
+          "token_count": 0,
+          "issues": []
+        },
+        {
+          "banner": "轻飘飘的信使",
+          "total": 80,
+          "tail": 20,
+          "tail_known": true,
+          "quota": 9900,
+          "events": [
+            {
+              "pulls": 40,
+              "character": "洁尔佩塔",
+              "off": false,
+              "identitySource": "synthetic-example"
+            },
+            {
+              "pulls": 20,
+              "character": "余烬",
+              "off": true,
+              "identitySource": "synthetic-example"
+            }
+          ],
+          "rush": [
+            {
+              "pulls": 10,
+              "character": "洁尔佩塔",
+              "identitySource": "synthetic-example"
+            }
+          ],
+          "rushUsed": true,
+          "rushAt": 30,
+          "token_count": 0,
+          "issues": []
+        }
+      ],
+      "weapon": {
+        "N": 160,
+        "K6": 7,
+        "KU": 2,
+        "potentialConfig": {
+          "totalTypes": 2,
+          "counts": [
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "overflowCopies": 0
+        },
+        "issues": []
+      },
+      "importNotes": [
+        "人工构造的演示数据，不对应真实玩家。"
+      ],
+      "source_sha256": "dd751167d4f167d5849e8b521829cdb2b982b5fe5fe8d6eb59526cc58a076447"
+    }
+  ],
+  "ledger": {
+    "schemaVersion": "gacha-ledger-v1",
+    "identity": {
+      "uid": "demo-account"
+    },
+    "sources": [
+      {
+        "file": "合成演示记录",
+        "source_sha256": "dd751167d4f167d5849e8b521829cdb2b982b5fe5fe8d6eb59526cc58a076447",
+        "kind": "synthetic-example",
+        "sourceImage": null,
+        "timing": null
+      }
+    ],
+    "character": {
+      "pools": [
+        {
+          "id": "banner-0",
+          "banner": "熔火灼痕",
+          "index": 0,
+          "up": "莱万汀",
+          "total": 60,
+          "tail": 20,
+          "localTail": 20,
+          "quota": 5000,
+          "initialPity": 0,
+          "initialPitySource": "record-derived",
+          "events": [
+            {
+              "at": 40,
+              "character": "莱万汀",
+              "forced": false,
+              "source": "main",
+              "evidence": {
+                "source_sha256": "dd751167d4f167d5849e8b521829cdb2b982b5fe5fe8d6eb59526cc58a076447",
+                "file": "合成演示记录",
+                "crop": null,
+                "raw": null,
+                "avatar": null,
+                "interval": 40,
+                "inheritedPityLabel": null,
+                "identitySource": "synthetic-example",
+                "needsReview": null,
+                "avatarLocation": null,
+                "offBadgeObserved": false
+              }
+            }
+          ],
+          "rushUsed": true,
+          "rushAt": 30,
+          "rushTimingEvidence": "provided-main-position",
+          "rush": [],
+          "tokens": [],
+          "issues": [],
+          "evidence": {
+            "source_sha256": "dd751167d4f167d5849e8b521829cdb2b982b5fe5fe8d6eb59526cc58a076447",
+            "file": "合成演示记录",
+            "sourceImage": null,
+            "header": null
+          }
+        },
+        {
+          "id": "banner-1",
+          "banner": "轻飘飘的信使",
+          "index": 1,
+          "up": "洁尔佩塔",
+          "total": 80,
+          "tail": 20,
+          "localTail": 20,
+          "quota": 9900,
+          "initialPity": 20,
+          "initialPitySource": "record-derived",
+          "events": [
+            {
+              "at": 20,
+              "character": "余烬",
+              "forced": false,
+              "source": "main",
+              "evidence": {
+                "source_sha256": "dd751167d4f167d5849e8b521829cdb2b982b5fe5fe8d6eb59526cc58a076447",
+                "file": "合成演示记录",
+                "crop": null,
+                "raw": null,
+                "avatar": null,
+                "interval": 20,
+                "inheritedPityLabel": null,
+                "identitySource": "synthetic-example",
+                "needsReview": null,
+                "avatarLocation": null,
+                "offBadgeObserved": true
+              }
+            },
+            {
+              "at": 60,
+              "character": "洁尔佩塔",
+              "forced": false,
+              "source": "main",
+              "evidence": {
+                "source_sha256": "dd751167d4f167d5849e8b521829cdb2b982b5fe5fe8d6eb59526cc58a076447",
+                "file": "合成演示记录",
+                "crop": null,
+                "raw": null,
+                "avatar": null,
+                "interval": 40,
+                "inheritedPityLabel": null,
+                "identitySource": "synthetic-example",
+                "needsReview": null,
+                "avatarLocation": null,
+                "offBadgeObserved": false
+              }
+            }
+          ],
+          "rushUsed": true,
+          "rushAt": 30,
+          "rushTimingEvidence": "provided-main-position",
+          "rush": [
+            {
+              "character": "洁尔佩塔",
+              "evidence": {
+                "source_sha256": "dd751167d4f167d5849e8b521829cdb2b982b5fe5fe8d6eb59526cc58a076447",
+                "file": "合成演示记录",
+                "crop": null,
+                "raw": null,
+                "avatar": null,
+                "interval": 10,
+                "inheritedPityLabel": null,
+                "identitySource": "synthetic-example",
+                "needsReview": null,
+                "avatarLocation": null,
+                "offBadgeObserved": null
+              }
+            }
+          ],
+          "tokens": [],
+          "issues": [],
+          "evidence": {
+            "source_sha256": "dd751167d4f167d5849e8b521829cdb2b982b5fe5fe8d6eb59526cc58a076447",
+            "file": "合成演示记录",
+            "sourceImage": null,
+            "header": null
+          }
+        }
+      ],
+      "initialPity": 0,
+      "initialOwned": [],
+      "completeHistory": true,
+      "historyEvidence": "contiguous_launch_banners",
+      "issues": []
+    },
+    "weapon": {
+      "N": 160,
+      "K6": 7,
+      "KU": 2,
+      "potentialConfig": {
+        "totalTypes": 2,
+        "counts": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "overflowCopies": 0
+      },
+      "issues": [],
+      "evidence": {
+        "sourceImage": null,
+        "source_sha256": "dd751167d4f167d5849e8b521829cdb2b982b5fe5fe8d6eb59526cc58a076447",
+        "file": "合成演示记录"
+      },
+      "upAverage": null
+    },
+    "issues": [],
+    "unresolvedCards": [],
+    "eventReviewMigrationVersion": "card-boundary-review-v7-pity-source-20261109"
+  },
+  "recognitionVersion": "card-boundary-review-v7-pity-source-20261109",
+  "scoringScenario": {
+    "enabled": false
+  },
+  "reviewed": false,
+  "example": true
+}

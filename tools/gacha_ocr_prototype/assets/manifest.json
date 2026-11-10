@@ -1,0 +1,169 @@
+{
+  "source": "https://warfarin.wiki/cn/operators",
+  "scope": "18 six-star gacha characters; no screenshots used as templates",
+  "artwork_rights": "Original game rights holders; public access is not a redistribution license",
+  "characters": [
+    {
+      "name": "明河",
+      "id": "chr_0037_minghe",
+      "page": "https://warfarin.wiki/cn/operators/argent-flow",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0037_minghe.webp",
+      "file": "icon_chr_0037_minghe.webp",
+      "bytes": 19918,
+      "sha256": "f5ea35e0f2eb3fb977d83bb9c0875ba2498536e9d1b53ee247edce846161c710"
+    },
+    {
+      "name": "祀",
+      "id": "chr_0036_jsspsi",
+      "page": "https://warfarin.wiki/cn/operators/si",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0036_jsspsi.webp",
+      "file": "icon_chr_0036_jsspsi.webp",
+      "bytes": 19014,
+      "sha256": "8f3549a6f7fb0897715d5d7bdb8a6fffa393c1031762fe69470b49e65cf2ef3e"
+    },
+    {
+      "name": "黎风",
+      "id": "chr_0015_lifeng",
+      "page": "https://warfarin.wiki/cn/operators/lifeng",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0015_lifeng.webp",
+      "file": "icon_chr_0015_lifeng.webp",
+      "bytes": 17978,
+      "sha256": "0ed24471231361b188cadd1d5b5197795efa78927b9ae20752750d6d7d897bde"
+    },
+    {
+      "name": "洛茜",
+      "id": "chr_0028_wulfa",
+      "page": "https://warfarin.wiki/cn/operators/rossi",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0028_wulfa.webp",
+      "file": "icon_chr_0028_wulfa.webp",
+      "bytes": 16836,
+      "sha256": "89255a90d3cdd4ae68ab1d8c4b1055c135f2572659429a4309ba5b61ff0c3b4c"
+    },
+    {
+      "name": "弭弗",
+      "id": "chr_0031_mifu",
+      "page": "https://warfarin.wiki/cn/operators/mifu",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0031_mifu.webp",
+      "file": "icon_chr_0031_mifu.webp",
+      "bytes": 16540,
+      "sha256": "3b00d41022d0d30e930ce59687c2b72c26b55a9f63f13fe125eaa24fd46d225f"
+    },
+    {
+      "name": "余烬",
+      "id": "chr_0009_azrila",
+      "page": "https://warfarin.wiki/cn/operators/ember",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0009_azrila.webp",
+      "file": "icon_chr_0009_azrila.webp",
+      "bytes": 15464,
+      "sha256": "e606f0bbf11a39eb49ec751b223129f587e14cf9e9a894285ecb78594db82b19"
+    },
+    {
+      "name": "洁尔佩塔",
+      "id": "chr_0013_aglina",
+      "page": "https://warfarin.wiki/cn/operators/gilberta",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0013_aglina.webp",
+      "file": "icon_chr_0013_aglina.webp",
+      "bytes": 16072,
+      "sha256": "e077483643997798c09376bac98c5d6c18ced95d9d3703463a42d8ed2b5b1e2d"
+    },
+    {
+      "name": "梨诺",
+      "id": "chr_0035_liino",
+      "page": "https://warfarin.wiki/cn/operators/liino",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0035_liino.webp",
+      "file": "icon_chr_0035_liino.webp",
+      "bytes": 18982,
+      "sha256": "8b4cf9a84fd99f8d827eba2c7cf8ea9ca3e52eb7332cd0176bcfa25561ab59ac"
+    },
+    {
+      "name": "艾尔黛拉",
+      "id": "chr_0025_ardelia",
+      "page": "https://warfarin.wiki/cn/operators/ardelia",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0025_ardelia.webp",
+      "file": "icon_chr_0025_ardelia.webp",
+      "bytes": 18440,
+      "sha256": "fd9e1095e5c8b420bda85bf3c288df6307d5df9c9c89361fdda0158ef91daf58"
+    },
+    {
+      "name": "诀",
+      "id": "chr_0032_lizhiyan",
+      "page": "https://warfarin.wiki/cn/operators/arcane",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0032_lizhiyan.webp",
+      "file": "icon_chr_0032_lizhiyan.webp",
+      "bytes": 13900,
+      "sha256": "f763c18825b4d4f279b57d0cebf94c2338025bbb5108cf56ed73a24ccf3ca763"
+    },
+    {
+      "name": "汤汤",
+      "id": "chr_0027_tangtang",
+      "page": "https://warfarin.wiki/cn/operators/tangtang",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0027_tangtang.webp",
+      "file": "icon_chr_0027_tangtang.webp",
+      "bytes": 19204,
+      "sha256": "cb536b5188a392149b2407987b3eb142b56a019b3427e800d79991732fde0741"
+    },
+    {
+      "name": "卡缪",
+      "id": "chr_0033_camille",
+      "page": "https://warfarin.wiki/cn/operators/camille",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0033_camille.webp",
+      "file": "icon_chr_0033_camille.webp",
+      "bytes": 16148,
+      "sha256": "33f0ed63e18d7f40f6747dbd411829413ba0166f1b51ff4f6802f5a2f202778a"
+    },
+    {
+      "name": "骏卫",
+      "id": "chr_0029_pograni",
+      "page": "https://warfarin.wiki/cn/operators/pogranichnik",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0029_pograni.webp",
+      "file": "icon_chr_0029_pograni.webp",
+      "bytes": 16340,
+      "sha256": "56bc80c251b35ea996c31cef9505f1ee1f8a822ed5536f199c7c1f63705608f6"
+    },
+    {
+      "name": "庄方宜",
+      "id": "chr_0030_zhuangfy",
+      "page": "https://warfarin.wiki/cn/operators/zhuang-fangyi",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0030_zhuangfy.webp",
+      "file": "icon_chr_0030_zhuangfy.webp",
+      "bytes": 16008,
+      "sha256": "8c5972d643f0bd8f7fbb21ac7bba67c3128a3f2fbb17a4a479aa9e82e0652d41"
+    },
+    {
+      "name": "莱万汀",
+      "id": "chr_0016_laevat",
+      "page": "https://warfarin.wiki/cn/operators/laevatain",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0016_laevat.webp",
+      "file": "icon_chr_0016_laevat.webp",
+      "bytes": 17698,
+      "sha256": "b9c54068417ea18089e2b3957d25a12e52c1beabfc1113d9a9638451c19338f3"
+    },
+    {
+      "name": "伊冯",
+      "id": "chr_0017_yvonne",
+      "page": "https://warfarin.wiki/cn/operators/yvonne",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0017_yvonne.webp",
+      "file": "icon_chr_0017_yvonne.webp",
+      "bytes": 17490,
+      "sha256": "09cf782a069165872deba0951ae1b8c32dda4c130de80a75d9539c36a7789d67"
+    },
+    {
+      "name": "提弗洛斯",
+      "id": "chr_0034_typhoea",
+      "page": "https://warfarin.wiki/cn/operators/typhoeus",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0034_typhoea.webp",
+      "file": "icon_chr_0034_typhoea.webp",
+      "bytes": 16196,
+      "sha256": "0ccc75f682e17c763e1cba558e01d9738a23998fccacc4cf644d718b112c9879"
+    },
+    {
+      "name": "别礼",
+      "id": "chr_0026_lastrite",
+      "page": "https://warfarin.wiki/cn/operators/last-rite",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0026_lastrite.webp",
+      "file": "icon_chr_0026_lastrite.webp",
+      "bytes": 18780,
+      "sha256": "e514aad9e550e7637057af7f189748808d550a4d9930c0d274d3ba1f0d551ce6"
+    }
+  ]
+}

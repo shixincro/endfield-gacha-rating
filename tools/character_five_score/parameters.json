@@ -1,0 +1,37 @@
+{
+  "version": "five-flat-v1",
+  "mu": -0.08096081491239257,
+  "sigma": 0.5754562752790213,
+  "baseline": {
+    "mainRate": 0.13411295200285397,
+    "rushMean": 1.1980598575793349
+  },
+  "trainingN": 2000,
+  "fitMs": 4.18119999999999,
+  "contract": {
+    "poolCount": 11,
+    "initialSixPity": 0,
+    "initialFivePity": 0,
+    "initialOwned": [],
+    "initialFreeBonus": false,
+    "preowned": "Use only free 10 or 20 pulls; never pay to reach 30",
+    "missing": "First target UP, minimum all free pulls, first target at main progress 46..59 extends to 60",
+    "rush": "Full independent ten immediately after main pull 30; never changes main pity or 120 state",
+    "free": "10 per banner; 20 if preceding banner reached 60",
+    "carry": "Both pity counters carry, 120 state is banner-local",
+    "stop": "Ideal single-draw stopping; no mandatory main ten completion; no resource budget cap",
+    "scope": "User-defined limited collection reference, not a proof of global optimality"
+  },
+  "sourceHashes": {
+    "scorer.js": "3231e00d6c5dd81b54012835592d4f5af5329d8462cd11429f906f33c8aad2e4",
+    "simulate_reference.js": "89bdaccba900e0748761a0509d0adc7205c0c4c379226b8c35af534ee81e8df6",
+    "calibrate.js": "d97b649f7ae865e8f26dce49f1f82121dba1521a3ddf0e8bebc515cb928e35d0",
+    "../../scratch/score_validation/recalibrate-five-20261012.js": "652587fb8eecbde99bd8abcea598e65e8776dd2d555555fa8745dbe25aa0a334",
+    "../../scratch/score_validation/five-score-20261012.js": "44d3ebed96243b53ed4aa9e8c3ee121ed7d5852c7150e8238945100b40787979",
+    "../../scratch/score_validation/mc-calibration-20261010.js": "db75557a1ad2a45aa62c2dfa9fc3dc170821cbc7eee453c80ca6b96cb4a4e008",
+    "../../scratch/score_validation/five-recalibration-20261012/parameters.json": "1b1f7889d6c1d140e444c68dd945e3dd76ceab448fb0ff9426856c1873134162"
+  },
+  "trainingSHA256": "b690782756a98ad826ea98227a293e3463443db14d94119fdd888e899a69a6d1",
+  "fittedBeforeValidation": true,
+  "status": "Final approximate limited-flat baseline; no strategy-specific recalibration"
+}

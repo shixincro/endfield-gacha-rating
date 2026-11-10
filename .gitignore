@@ -1,0 +1,43 @@
+# Local player history and generated image evidence
+**/data/
+**/runs/
+**/diagnostics/
+**/validation/
+**/test_outputs/
+outputs/
+scratch/
+dist/
+releases/
+
+# Dependencies and runtimes
+.venv/
+**/.venv/
+node_modules/
+**/node_modules/
+runtime/
+vendor/
+*.onnx
+*.dll
+*.exe
+*.zip
+
+# Game artwork is downloaded separately, not covered by this project's MIT license
+tools/gacha_ocr_prototype/assets/*
+!tools/gacha_ocr_prototype/assets/manifest.json
+
+# Local configuration, caches and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.log
+.DS_Store
+Thumbs.db
+.codex/
+.agents/
+.idea/
+.vscode/
