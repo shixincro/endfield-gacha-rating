@@ -17,7 +17,7 @@ const scoreSettingPending=()=>!!planningExemptionRequest||!!scoringScenarioReque
 let draftValidationTimer=null,draftValidationEpoch=0,draftValidationRequest=0,draftValidationLedger=null,draftValidationState='idle',draftValidationMessage='',draftFingerprint='',draftOpeningSignature='';
 const characterPoolViews=new Map();
 let weaponIssueView=null,queueIssueView=null;
-const viewDialogs=['planningDetailDialog','planningAllDialog','historyDialog','hypothesisDialog','manualSupplementDialog'];
+const viewDialogs=['planningDetailDialog','planningAllDialog','historyDialog','hypothesisDialog','manualSupplementDialog','recordFormatDialog'];
 const clone=value=>JSON.parse(JSON.stringify(value));
 const effectiveCharacter=value=>edit.validateInterruption(value)?value:edit.projectCharacter(value).character;
 const hasWeaponProfile=w=>ui.hasWeaponProfile(w);
@@ -62,7 +62,14 @@ function error(message){showNotice('error',message);}
 function status(message,running=false){showNotice('status',message,running);}
 async function api(path,body){
   const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-App-Token':token},body:JSON.stringify(body)});
-  const value=await response.json();if(!response.ok)throw Error(value.error||'请求失败');return value;
+  const value=await response.json();
+  if(!response.ok){const failure=Error(value.error||'请求失败');if(typeof value.code==='string')failure.code=value.code;throw failure;}
+  return value;
+}
+function showUnsupportedRecordFormat(names){
+  const files=[...new Set(names.filter(name=>typeof name==='string'&&name))];
+  $('recordFormatFiles').textContent=files.length?'文件：'+files.join('、'):'';
+  $('recordFormatFiles').hidden=!files.length;openDialog('recordFormatDialog');
 }
 function button(text,fn){const n=el('button',text);n.type='button';n.onclick=(...args)=>{const result=fn(...args);draftChanged();return result;};return n;}
 function field(title,value,onChange,type='number'){
@@ -204,7 +211,8 @@ async function calculate(reviewed,{preserveReview=false}={}){
     session=updated;renderLedgerIssues();renderResults();renderReviewActions();refreshHistory();return true;
   }catch(e){if(myRequest!==requestId||myRevision!==revision)return false;error(e.message);$('calculating').textContent='计算未完成，请检查提示。';return false;}
 }
-function selected(list){if(restoring)return;files=[...list];$('selection').textContent=files.length?files.map(f=>f.name).join('、'):'尚未选择截图';$('import').disabled=busy||historyDeleting||scoreSettingPending()||!files.length;}
+function selected(list){if(busy||restoring||historyDeleting||scoreSettingPending())return;files=[...list];$('selection').textContent=files.length?files.map(f=>f.name).join('、'):'尚未选择文件';$('import').disabled=!files.length;}
+function inputFileKind(file){return /\.(?:txt|json)$/i.test(file.name||'')?'record':/\.(?:png|jpe?g|webp)$/i.test(file.name||'')?'image':null;}
 $('images').onchange=e=>selected(e.target.files);
 const dz=$('dropzone');dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag');};dz.ondragleave=()=>dz.classList.remove('drag');
 dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag');selected(e.dataTransfer.files);};
@@ -225,28 +233,44 @@ $('import').onclick=async()=>{
   if(busy||historyDeleting||restoring||scoreSettingPending())return;
   let completedSummary='';
   try{
-    error('');if(!files.length||files.length>12)throw Error('请选择1—12张截图，每张图将独立建档。');
-    if(files.reduce((s,f)=>s+f.size,0)>70*1024*1024)throw Error('这一批图片超过70 MB，请分批处理。');
-    busy=true;updateHistoryControls();$('import').disabled=true;status('正在读取截图…',true);const uploaded=[];
-    for(const f of files)uploaded.push({name:f.name,data:await readFile(f)});
-    const job=await api('/api/import',{files:uploaded});
-    while(true){
-      const progress=await api('/api/jobs/'+job.id);status(progress.message,progress.status==='running');
-      if(progress.status==='error'){
-        const failed=(progress.items||[]).filter(item=>item.status==='error').length;
-        if(failed)completedSummary=`已完成：0 份独立记录，${failed} 张失败。`;
-        throw Error([progress.message,importFailures(progress.items)].filter(Boolean).join('\n'));
-      }
-      if(progress.status==='done'){
-        const sessions=progress.sessions||(progress.session?[progress.session]:[]);
-        if(sessions.length)await loadSession(sessions[0],{reviewImport:true});
-        const failed=progress.failed??(progress.items||[]).filter(item=>item.status==='error').length;
-        completedSummary=`已完成：${sessions.length} 份独立记录，${failed} 张失败。可在本机历史记录中打开。`;status(completedSummary);
-        error(importFailures(progress.items));
-        refreshHistory();break;
-      }
-      await new Promise(resolve=>setTimeout(resolve,900));
+    const selectedFiles=[...files];
+    error('');if(!selectedFiles.length||selectedFiles.length>12)throw Error('请选择1—12个截图或 TXT / JSON 记录文件。');
+    const unsupported=selectedFiles.filter(f=>!inputFileKind(f));
+    if(unsupported.length)throw Error('不支持的文件：'+unsupported.map(f=>f.name).join('、')+'。请选择 PNG、JPG、WebP、TXT 或 JSON。');
+    if(selectedFiles.reduce((s,f)=>s+f.size,0)>70*1024*1024)throw Error('这一批文件超过70 MB，请分批处理。');
+    const images=selectedFiles.filter(f=>inputFileKind(f)==='image'),records=selectedFiles.filter(f=>inputFileKind(f)==='record');
+    const imported=[],failures=[],warnings=[],unsupportedRecords=[];let failed=0;
+    busy=true;navigationId++;updateHistoryControls();
+    if(images.length){
+      try{
+        status('正在读取截图…',true);const uploaded=[];
+        for(const f of images)uploaded.push({name:f.name,data:await readFile(f)});
+        const job=await api('/api/import',{files:uploaded});
+        while(true){
+          const progress=await api('/api/jobs/'+job.id);status(progress.message,progress.status==='running');
+          if(progress.status==='error'){
+            failed+=progress.failed||(progress.items||[]).filter(item=>item.status==='error').length||images.length;
+            failures.push([progress.message,importFailures(progress.items)].filter(Boolean).join('\n'));break;
+          }
+          if(progress.status==='done'){
+            imported.push(...(progress.sessions||(progress.session?[progress.session]:[])));
+            failed+=progress.failed??(progress.items||[]).filter(item=>item.status==='error').length;
+            const message=importFailures(progress.items);if(message)failures.push(message);break;
+          }
+          await new Promise(resolve=>setTimeout(resolve,900));
+        }
+      }catch(e){failed+=images.length;failures.push('截图导入：'+displayText(e.message));}
     }
+    for(const file of records){
+      try{
+        const result=await importRecordFile(file);imported.push(...result.sessions);
+        failures.push(...result.failures);failed+=result.failures.length;warnings.push(...result.warnings);
+      }catch(e){failed++;failures.push(file.name+'：'+displayText(e.message));if(e.code==='record_format_unrecognized')unsupportedRecords.push(file.name);}
+    }
+    if(imported.length)await loadSession(imported[0],{reviewImport:images.length>0&&imported[0].documents?.some(d=>d.sourceImage)});
+    completedSummary=`已完成：${imported.length} 份独立记录，${failed} ${records.length?'项':'张'}失败。可在本机历史记录中打开。`;
+    showRecordImportFeedback(completedSummary,failures,warnings);await refreshHistory();
+    if(unsupportedRecords.length)showUnsupportedRecordFormat(unsupportedRecords);
   }catch(e){error(e.message);status(completedSummary);}finally{busy=false;$('import').disabled=historyDeleting||!files.length;updateHistoryControls();}
 };
 function loadSession(value,{reviewImport=false}={}){
@@ -1162,6 +1186,40 @@ async function setPlanningExemption(poolId,checked){
     renderPlanningViews();updateHistoryControls();$('save').disabled=false;if(!$('planningDetailDialog').open)error(planningExemptionError.message);
   }
 }
+function renderPlanningRecord(target,p){
+  const section=el('section',undefined,'planning-record');section.append(el('h3','卡池出货记录'));
+  if(!p){section.append(el('p','该卡池的明细尚未保存。','muted'));target.append(section);return;}
+  const summary=el('div',undefined,'planning-record-summary');
+  for(const [label,value]of [['主池总抽数',p.total],['期初水位',p.initialPity],['期末水位',p.tail]]){
+    const item=el('span');item.append(el('span',label+' '),el('strong',Number.isFinite(value)?value+' 抽':'未知'));summary.append(item);
+  }
+  section.append(summary);
+  const table=el('table'),head=el('tr');for(const title of ['类型','位置','出货'])head.append(el('th',title));table.append(head);
+  const add=(kind,position,name,badge='')=>{
+    const row=el('tr'),result=el('td');result.append(el('strong',name));if(badge)result.append(el('span',badge,'record-hit-badge'));
+    row.append(el('td',kind),el('td',position),result);table.append(row);
+  };
+  const position=at=>Number.isFinite(at)?'第 '+at+' 抽':'位置未知';
+  for(const event of [...(p.events||[])].sort((a,b)=>(a.at??Infinity)-(b.at??Infinity))){
+    const badge=event.forced?'120 保底':event.character&&p.up?(event.character===p.up?'UP':'歪'):'';
+    add('主池六星',position(event.at),event.character||'角色待确认',badge);
+  }
+  if(!p.events?.length)add('主池','—','未记录六星出货');
+  for(const event of p.rush||[])add('加急六星',Number.isFinite(event.at)?position(event.at):'独立十连',event.character||'角色待确认',event.character&&p.up?(event.character===p.up?'UP':'歪'):'');
+  if(!p.rush?.length)add('加急十连',p.rushUsed===true?'已使用':p.rushUsed===false?'未使用':'待确认',p.rushUsed===true?'未出六星':p.rushUsed===false?'—':'使用情况未知');
+  for(const token of p.tokens||[])add('赠送信物',position(token.at),token.character||p.up||'角色待确认','不计六星');
+  const wrap=el('div',undefined,'table-wrap');wrap.append(table);section.append(wrap);
+  if(p.rushUsed===true&&Number.isFinite(p.rushAt))section.append(el('p','加急十连在主池第 '+p.rushAt+' 抽时使用。','muted small'));
+  target.append(section);
+}
+function renderPlanningEvidence(target,p,row){
+  const evidence=el('div'),src=poolSource(p);target.append(evidence);
+  if(typeof src==='string'&&src.startsWith('/data/')){
+    renderSourceEvidence(evidence,[{sourceImage:src,file:(row.banner||row.id)+' · 记录图'}]);
+    const img=evidence.querySelector('img');
+    if(img)img.onerror=()=>{evidence.replaceChildren();renderPlanningRecord(evidence,p);};
+  }else renderPlanningRecord(evidence,p);
+}
 function openPlanningDetail(row){
     row=session.result?.planning?.pools?.find(p=>p.id===row.id)||row;planningDetailPoolId=row.id;
     renderScoringScenario();
@@ -1172,17 +1230,14 @@ function openPlanningDetail(row){
       card.append(el('p','资源损耗按假设补抽后的结果计算。','scenario-detail-note'));
       card.append(el('p','假设新增 '+scenarioPlan.addedDraws+' 抽：'+(scenarioPlan.events||[]).map(event=>'第'+event.at+'抽 '+(event.character||session.scoringScenario?.choices?.[event.at]||'六星')+(event.forced?'（首UP保底）':'')).join('；'),'muted small'));
     }
-    const exemption=el('div',undefined,'planning-exemption'),choice=el('label',undefined,'check'),input=el('input');input.type='checkbox';
+    const exemption=$('planningExemption'),choice=el('label',undefined,'check'),input=el('input');exemption.replaceChildren();input.type='checkbox';
     const pending=planningExemptionRequest?.poolId===row.id,exempt=p?.planningExempt===true||row.planningExempt===true;
     input.checked=pending?planningExemptionRequest.checked:exempt;
     input.disabled=!p||scoreSettingPending()||busy||restoring||historyDeleting||!$('calculating').hidden||(!exempt&&!(row.status==='ok'&&Number.isFinite(row.localLoss)&&row.localLoss>0));
-    input.onchange=()=>setPlanningExemption(row.id,input.checked);choice.append(input,el('span','豁免此项亏损'));exemption.append(choice,
-      el('p','豁免后，本池正亏损不计入资源损耗合计和称号；可随时取消。','muted small'));
-    exemption.append(el('p','原亏损 '+lossText(row.localLoss)+' 抽 · 本次计入 '+(counted==null?'数据不足':lossText(counted)+' 抽')+(exempt?' · 已选择豁免'+(row.exemptedLoss>0?'（已豁免 '+lossText(row.exemptedLoss)+' 抽）':'（当前未免除亏损）'):''),'planning-exemption-note small'));
-    if(pending)exemption.append(el('p','正在保存…','muted small'));
-    if(planningExemptionError?.poolId===row.id)exemption.append(el('p',planningExemptionError.message,'error small'));
-    if(!exempt&&input.disabled&&!planningExemptionRequest)exemption.append(el('p','仅已完成计算的正亏损可选择豁免。','muted small'));
-    card.append(exemption);
+    input.onchange=()=>setPlanningExemption(row.id,input.checked);choice.append(input,el('span','豁免此项亏损'));exemption.append(choice);
+    exemption.setAttribute('aria-busy',String(pending));
+    if(pending)card.append(el('p','正在保存…','muted small'));
+    if(planningExemptionError?.poolId===row.id)card.append(el('p',planningExemptionError.message,'error small'));
     const anchorName=anchor?.kind==='new-limited'?'New限定「'+anchor.character+'」'+(anchor.source==='rush'?'（加急）':''):anchor?.source==='token'?'UP信物':anchor?.source==='rush'?'加急UP':'当期UP';
     card.append(el('p',anchor?'以第'+anchor.at+'抽的'+anchorName+'为停点参照。':row.status==='partial'?'有效收获停点存在缺项，未猜填。':'本池未获得有效收获，参照为用完免费抽后停手。','muted small'));
     if(row.stopRule==='complete-free-allowance')card.append(el('p','免费额度内出货，理想停点仍为用完本池'+row.freeAllowance+'抽免费额度。','muted small'));
@@ -1198,7 +1253,7 @@ function openPlanningDetail(row){
     for(const warning of row.warnings||[])card.append(el('p',issueText(warning),'muted small'));
     const b=row.opportunity;card.append(el('h3','机会估值 · '+(b?.status==='ok'&&Number.isFinite(b.value)?b.value.toFixed(2)+' 抽':'数据不足')));
     if(p?.events?.length)card.append(el('p','实际主池出货：'+p.events.map(e=>'第'+e.at+'抽 '+e.character+(e.forced?'（120保底）':'')).join('；'),'muted small'));
-    const src=poolSource(p);if(src)renderSourceEvidence(card,[{sourceImage:src,file:(row.banner||row.id)+' · 记录图'}]);else card.append(el('p','此记录的原图当前不可用。','muted small'));
+    renderPlanningEvidence(card,p,row);
     if(!$('planningDetailDialog').open)openDialog('planningDetailDialog');
 }
 function renderPlanning(planning){
@@ -1316,26 +1371,46 @@ function restoreSessions(value){
   return records;
 }
 $('restore').onclick=()=>{if(!busy&&!historyDeleting&&!restoring&&!scoreSettingPending())$('restoreFile').click();};
+async function importRecordFile(file){
+  if(file.size>64*1024*1024)throw Error('记录集合超过64 MB，请分批导入。');
+  status('正在读取抽卡记录…',true);
+  const text=(await file.text()).replace(/^\uFEFF/,'');let value=null;
+  try{value=JSON.parse(text);}catch{} // The server also recognizes supported plain-text exports.
+  const collection=value?.schemaVersion==='gacha-rating-collection-v1',ownRecord=collection||value?.schemaVersion==='gacha-rating-session-v1';
+  if(!collection&&file.size>8*1024*1024)throw Error('单份记录超过8 MB，请拆分后导入。');
+  if(!ownRecord){
+    status('正在转换并计算抽卡记录…',true);
+    const imported=await api('/api/records/import',{name:file.name||'record.json',text});
+    if(imported?.schemaVersion!=='gacha-rating-session-v1'||!imported.id||!imported.ledger||!imported.result)throw Error('服务没有返回完整的导入记录，请检查本机历史后重试。');
+    const detail=imported.importSummary,summary='抽卡记录已导入本机。'+(typeof detail==='string'?detail:detail?.message||'');
+    const warnings=[...(Array.isArray(imported.importWarnings)?imported.importWarnings:[]),...(Array.isArray(detail?.warnings)?detail.warnings:[])].map(item=>displayText(typeof item==='string'?item:item?.message)).filter(Boolean);
+    return {sessions:[imported],failures:[],warnings,summary};
+  }
+  const records=restoreSessions(value),restored=[],failures=[];
+  for(const [index,record]of records.entries()){
+    status('正在恢复 '+(index+1)+'/'+records.length+'：'+restoreRecordName(record,index),true);
+    try{restored.push(await api('/api/restore',record));}
+    catch(e){failures.push(restoreRecordName(record,index)+'：'+displayText(e.message));}
+  }
+  const summary=collection?'已恢复 '+restored.length+'/'+records.length+' 份独立记录，'+failures.length+' 份失败。可在本机历史记录中打开。':restored.length?'记录已恢复并按当前算法重算。':'记录恢复失败。';
+  return {sessions:restored,failures,warnings:[],summary};
+}
+function showRecordImportFeedback(summary,failures=[],warnings=[]){
+  $('historyDeleteFeedback').hidden=false;
+  $('historyDeleteFeedback').textContent=[summary,...failures,...warnings,failures.length?'成功记录已保留；重试时只导入失败的记录。':''].filter(Boolean).join('\n');
+  $('historyDeleteFeedback').className='history-feedback small'+(failures.length?' has-error':'');
+  status([summary,...warnings].join('\n'));error(failures.join('\n'));
+}
 $('restoreFile').onchange=async e=>{
   if(busy||historyDeleting||restoring||scoreSettingPending())return;
   let started=false;
-  try{const file=e.target.files[0];if(!file)return;if(file.size>64*1024*1024)throw Error('记录集合超过64 MB，请分批导入。');
+  try{
+    const file=e.target.files[0];if(!file)return;
     restoring=true;started=true;navigationId++;updateHistoryControls();error('');
-    status('正在校验保存的记录…',true);
-    const value=JSON.parse(await file.text()),collection=value?.schemaVersion==='gacha-rating-collection-v1';
-    if(!collection&&file.size>8*1024*1024)throw Error('记录文件过大。');
-    const records=restoreSessions(value),restored=[],failures=[];
-    for(const [index,record]of records.entries()){
-      status('正在恢复 '+(index+1)+'/'+records.length+'：'+restoreRecordName(record,index),true);
-      try{restored.push(await api('/api/restore',record));}
-      catch(e){failures.push(restoreRecordName(record,index)+'：'+displayText(e.message));}
-    }
-    if(restored.length)await loadSession(restored[0]);
-    const summary=collection?'已恢复 '+restored.length+'/'+records.length+' 份独立记录，'+failures.length+' 份失败。可在本机历史记录中打开。':restored.length?'记录已恢复并按当前算法重算。':'记录恢复失败。';
-    $('historyDeleteFeedback').hidden=false;$('historyDeleteFeedback').textContent=summary+(failures.length?'\n'+failures.join('\n')+'\n成功记录已保留；重试时只导入失败的记录。':'');
-    $('historyDeleteFeedback').className='history-feedback small'+(failures.length?' has-error':'');
-    status(summary);error(failures.join('\n'));
-  }catch(e){error(e.message);status('');}finally{
+    const result=await importRecordFile(file);
+    if(result.sessions.length)await loadSession(result.sessions[0]);
+    showRecordImportFeedback(result.summary,result.failures,result.warnings);
+  }catch(failure){const message='导入失败：'+displayText(failure.message);error(message);status('');$('historyDeleteFeedback').hidden=false;$('historyDeleteFeedback').textContent=message;$('historyDeleteFeedback').className='history-feedback small has-error';if(failure.code==='record_format_unrecognized')showUnsupportedRecordFormat([e.target?.files?.[0]?.name]);}finally{
     restoring=false;e.target.value='';updateHistoryControls();
     if(started){if(session&&$('calculating').hidden){$('save').disabled=false;$('exportRadar').disabled=!luckRevealed;}await refreshHistory();}
   }
@@ -1354,7 +1429,7 @@ function updateHistoryControls(){
   for(const node of $('history').querySelectorAll('input'))node.disabled=locked;
   for(const node of $('history').querySelectorAll('button'))node.disabled=locked;
   for(const node of document.querySelectorAll('[data-close-dialog]'))if(node.getAttribute('data-close-dialog')==='historyDialog')node.disabled=historyDeleting||restoring;
-  $('import').disabled=busy||historyDeleting||restoring||scoreSettingPending()||!files.length;$('images').disabled=historyDeleting||restoring||scoreSettingPending();
+  $('import').disabled=busy||historyDeleting||restoring||scoreSettingPending()||!files.length;$('images').disabled=busy||historyDeleting||restoring||scoreSettingPending();
   if(historyDeleting||restoring){$('save').disabled=true;$('exportRadar').disabled=true;}
   renderReviewActions();renderScoringScenario();if(hypothesis)renderHypothesisActivation();
 }

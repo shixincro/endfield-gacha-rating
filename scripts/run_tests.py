@@ -26,6 +26,7 @@ def main():
     js_tests = sorted(app.glob('test_*.js')) + sorted((ROOT/'tools/character_five_score').glob('test_*.js'))
     run([node,'--test',*map(str,js_tests)])
     run([sys.executable,'-X','utf8','-m','unittest','discover','-s','tools/weapon_score_v2','-p','test_*.py'])
+    run([sys.executable,'-X','utf8','-m','unittest','discover','-s','scripts','-p','test_*.py'])
     if args.ocr:
         run([sys.executable,'-X','utf8','scripts/check_environment.py'])
         run([sys.executable,'-X','utf8','-m','unittest','discover','-s','tools/gacha_ocr_prototype','-p','test_*.py'])

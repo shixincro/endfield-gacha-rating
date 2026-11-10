@@ -2,6 +2,7 @@
 from __future__ import annotations
 import argparse
 import base64
+import hashlib
 import io
 import json
 import math
@@ -32,12 +33,72 @@ WORKER = ThreadPoolExecutor(max_workers=1)
 ENGINE = None
 MAX_BODY = 100*1024*1024
 MAX_DELETE_IDS = 1000
+MAX_RECORD_TEXT = 8*1024*1024
 
 def save_json(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
     os.replace(temporary, path)
+
+
+def import_text_record(data):
+    """Convert one uploaded export; never treat its filename as a local path."""
+    if not isinstance(data, dict) or not isinstance(data.get('name'), str):
+        raise ValueError('请选择一个 TXT 或 JSON 抽卡记录文件。')
+    name = data['name'].replace('\\', '/').rsplit('/', 1)[-1][:200]
+    if Path(name).suffix.lower() not in ('.txt', '.json'):
+        raise ValueError('抽卡记录仅支持 TXT 或 JSON 文件。')
+    text = data.get('text')
+    if not isinstance(text, str) or not text.strip('\ufeff \r\n\t'):
+        raise ValueError('记录文件为空或内容无法读取。')
+    if len(text.encode('utf-8')) > MAX_RECORD_TEXT:
+        raise ValueError('单份第三方记录不能超过 8 MB。')
+    from record_import import import_record_text
+    from importer import revalidate_current_ledger
+    from service import score_session_result, reject_hypothetical_ledger
+    confirmed = confirmed_pool_histories(text)
+    session = (import_record_text(text, name, confirmed_complete_pools=confirmed)
+               if confirmed else import_record_text(text, name))
+    session.update(id=uuid.uuid4().hex, revision=1, updatedAt=time.time(),
+                   recognitionVersion=RECOGNITION_VERSION, scoringScenario={'enabled':False})
+    reject_hypothetical_ledger(session['ledger'])
+    session['ledger'] = revalidate_current_ledger(session['documents'], session['ledger'],
+                                                 reviewed=session.get('reviewed', False))
+    session['result'] = score_session_result(session['documents'], session['ledger'],
+                                            session['scoringScenario'], reviewed=session.get('reviewed', False))
+    # Score and serialize before creating a record, so a failed conversion
+    # cannot leave an apparently imported item in local history.
+    json.dumps(session, ensure_ascii=False, allow_nan=False)
+    with LOCK:
+        save_json(DATA/session['id']/'session.json', session)
+    return session
+
+
+def confirmed_pool_histories(text):
+    """Reuse explicit pool-opening confirmations only for the identical source."""
+    digests = {hashlib.sha256(value.encode('utf-8')).hexdigest()
+               for value in (text, text.lstrip('\ufeff'), '\ufeff'+text.lstrip('\ufeff'))}
+    confirmed = set()
+    if not DATA.is_dir():
+        return confirmed
+    with LOCK:
+        for directory in DATA.iterdir():
+            if not re.fullmatch(r'[a-f0-9]{32}', directory.name):
+                continue
+            try:
+                saved = session_directory(directory.name)/'session.json'
+                _plain_path(saved)
+                prior = json.loads(saved.read_text(encoding='utf-8'))
+                for document in prior.get('documents', []):
+                    if document.get('source_sha256') not in digests:
+                        continue
+                    values = document.get('userConfirmations', {}).get('fullPoolHistories', [])
+                    if isinstance(values, list):
+                        confirmed.update(value for value in values if isinstance(value, str))
+            except (OSError, ValueError, TypeError, AttributeError):
+                continue
+    return confirmed
 
 def checked_id(value):
     if not isinstance(value,str) or not re.fullmatch(r'[a-f0-9]{32}',value):
@@ -432,6 +493,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(data,dict):
                     raise ValueError('删除请求格式错误。')
                 return self.send(200,delete_sessions(data.get('ids')))
+            if path=='/api/records/import':
+                return self.send(200, import_text_record(data))
             if path in ('/api/hypothesis/plan','/api/hypothesis/preview'):
                 from hypothesis import plan_hypothesis, preview_hypothesis
                 session=data.get('session') if isinstance(data,dict) else None
@@ -557,7 +620,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200,session)
             self.send(404,{'error':'接口不存在。'})
         except Exception as exc:
-            self.send(400,{'error':str(exc)[:1000]})
+            failure={'error':str(exc)[:1000]}
+            if getattr(exc,'code',None)=='record_format_unrecognized':
+                failure['code']='record_format_unrecognized'
+            self.send(400,failure)
 
 def main():
     parser=argparse.ArgumentParser()

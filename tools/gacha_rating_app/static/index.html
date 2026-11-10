@@ -4,7 +4,7 @@
 <body>
 <header class="top"><h1 class="brand-heading"><a class="brand" href="/">ENDFIELD <span>抽卡记录评分</span></a></h1><span class="local">本机处理 · 不上传云端</span></header>
 <main>
-<section class="upload" id="dropzone"><label class="file-label" for="images"><strong>选择或拖入小黑盒长截图</strong><span>每张图对应一份独立记录 · PNG / JPG / WebP · 每批最多12张</span></label><input id="images" type="file" accept="image/png,image/jpeg,image/webp" multiple><div id="selection" class="muted">尚未选择截图</div><div class="actions"><button id="import" class="primary" disabled>开始识别</button><button id="openHistory" type="button" aria-haspopup="dialog" aria-controls="historyDialog">本机历史记录</button></div></section>
+<section class="upload" id="dropzone"><label class="file-label" for="images"><strong>选择或拖入截图、TXT / JSON 记录</strong><span>PNG / JPG / WebP / TXT / JSON · 每批最多12个文件 · 独立建档</span></label><input id="images" type="file" accept=".png,.jpg,.jpeg,.webp,.txt,.json,image/png,image/jpeg,image/webp,text/plain,application/json" multiple><div id="selection" class="muted">尚未选择文件</div><div class="actions"><button id="import" class="primary" disabled>开始导入</button><button id="openHistory" type="button" aria-haspopup="dialog" aria-controls="historyDialog">本机历史记录</button></div></section>
 <div id="notifications" class="toast-stack" popover="manual"><div id="status" role="status" aria-live="polite" hidden></div><div id="error" role="alert" hidden></div></div>
 <section id="workspace" hidden>
 <div class="section-head record-meta"><h2 id="recordTitle">识别结果</h2>
@@ -88,7 +88,7 @@
   <div class="dialog-footer"><p class="muted small">取消勾选可恢复实际评分。</p><div class="actions"><button type="button" data-close-dialog="hypothesisDialog">关闭</button><button id="hypothesisPreview" type="button" disabled>先预览评分变化</button></div></div>
 </dialog>
 <dialog id="planningDetailDialog" class="review-dialog planning-detail-dialog" aria-labelledby="planningDetailTitle">
-  <div class="dialog-header"><h2 id="planningDetailTitle">卡池亏损详情</h2></div>
+  <div class="dialog-header"><h2 id="planningDetailTitle">卡池亏损详情</h2><div id="planningExemption" class="planning-exemption"></div></div>
   <div class="dialog-scroll"><div id="scoringScenario" class="scoring-scenario" aria-live="polite" hidden></div><div id="planningDetailContent"></div></div>
   <div class="dialog-footer"><div class="actions"><button type="button" data-close-dialog="planningDetailDialog">关闭</button></div></div>
 </dialog>
@@ -99,7 +99,7 @@
 </dialog>
 </section>
 <dialog id="historyDialog" class="review-dialog history-dialog" aria-labelledby="historyDialogTitle">
-  <div class="dialog-header"><h2 id="historyDialogTitle">本机保存的记录</h2><p class="muted small">打开之前识别的记录，或导入保存过的记录 JSON。</p></div>
+  <div class="dialog-header"><h2 id="historyDialogTitle">本机保存的记录</h2><p class="muted small">打开本机记录，或导入抽卡记录 TXT / JSON。</p></div>
   <div class="dialog-scroll">
     <div class="history-toolbar"><label class="check"><input id="historySelectAll" type="checkbox" disabled><span id="historySelectAllText">全选</span></label><span id="historySelectionCount" class="muted small">共0份，已选0份</span><button id="historyDelete" class="danger" type="button" disabled>删除选中（0）</button></div>
     <p id="historyDeleteFeedback" class="history-feedback small" role="status" aria-live="polite" hidden></p>
@@ -109,7 +109,12 @@
     </section>
     <div id="history" class="history muted">正在读取…</div>
   </div>
-  <div class="dialog-footer"><button id="restore" type="button">导入记录 JSON</button><input id="restoreFile" type="file" accept="application/json,.json" hidden><div class="actions"><button type="button" data-close-dialog="historyDialog">关闭</button></div></div>
+  <div class="dialog-footer"><button id="restore" type="button">导入 TXT / JSON</button><input id="restoreFile" type="file" accept=".txt,.json,text/plain,application/json" hidden><div class="actions"><button type="button" data-close-dialog="historyDialog">关闭</button></div></div>
 </dialog>
 </main>
+<dialog id="recordFormatDialog" class="review-dialog record-format-dialog" aria-labelledby="recordFormatTitle" aria-describedby="recordFormatMessage">
+  <div class="dialog-header"><h2 id="recordFormatTitle">记录格式未识别</h2></div>
+  <div class="dialog-scroll"><p id="recordFormatMessage">暂不支持此记录格式，请联系作者协助适配。</p><p id="recordFormatFiles" class="muted small" hidden></p></div>
+  <div class="dialog-footer"><div class="actions"><button class="primary" type="button" data-close-dialog="recordFormatDialog">确定</button></div></div>
+</dialog>
 </body></html>

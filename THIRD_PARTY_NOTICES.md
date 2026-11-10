@@ -24,5 +24,16 @@
 | OpenCV / opencv-python | 核心 Apache-2.0，Python 包装 MIT，捆绑组件另有许可 | <https://github.com/opencv/opencv-python/blob/5.x/LICENSE.txt> |
 | NumPy | BSD-3-Clause 及随附组件许可 | <https://github.com/numpy/numpy/blob/main/LICENSE.txt> |
 | Pillow | MIT-CMU | <https://github.com/python-pillow/Pillow/blob/main/LICENSE> |
+| Shapely / GEOS | Shapely BSD-3-Clause，GEOS LGPL-2.1 | <https://shapely.readthedocs.io>, <https://libgeos.org> |
 
 完整依赖及传递依赖由 pip 解析。若制作二进制分发包，需要包含实际分发组件的许可证，并重新核对游戏素材的分发范围。
+
+## Windows 便携下载包
+
+GitHub Release 的 Windows ZIP 附带 Python、Node.js、OCR 模型和实际 Python 依赖。原始许可证分别保留在 `runtime/python/LICENSE.txt`、`runtime/node/LICENSE.txt`、各 Python 包及其 `dist-info` 目录内；PaddleOCR 的 Apache-2.0 原文另附于 RapidOCR 包内。精确版本与文件校验值见 `package-info.json` 和 `SHA256SUMS.json`。
+
+Microsoft Visual C++ 运行库按原样随应用放置在本地目录，适用 [Microsoft Visual C++ Runtime 许可条款](https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/)及[再分发说明](https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution)，不适用本项目 MIT。许可原文附在 `runtime/python/Microsoft-VC-Runtime-License.docx`。
+
+此包不包含游戏头像，首次使用按清单下载。只用于视频编解码的 OpenCV FFmpeg 插件未打入便携包。
+
+GEOS 动态库及 Shapely 绑定的对应源码归档随包放在 `third_party_sources/`，许可证保留在 Shapely 的 `dist-info/licenses/`。可按 LGPL 修改、替换 GEOS 或重建绑定，并允许为调试这些修改进行逆向工程；本项目未对该权利附加限制。

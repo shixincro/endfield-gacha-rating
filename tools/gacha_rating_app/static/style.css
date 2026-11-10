@@ -49,6 +49,7 @@ main{max-width:1480px}
 .review-dialog[open]{display:flex;flex-direction:column}
 .review-dialog:not([open]){display:none}
 .review-dialog::backdrop{background:#11281c70;backdrop-filter:blur(2px)}
+.record-format-dialog{width:min(480px,calc(100vw - 40px))}.record-format-dialog p{overflow-wrap:anywhere}
 .weapon-dialog{width:min(780px,calc(100vw - 40px))}
 .dialog-header{padding:22px 26px 17px;border-bottom:1px solid var(--line);flex-shrink:0;background:#fbfcf8}
 .dialog-header h2{margin-bottom:6px}
@@ -136,7 +137,8 @@ main{max-width:1480px}
 .is-concealed .reveal-luck{display:block}
 .reveal-luck:focus-visible{outline-offset:6px}
 .planning-detail-dialog .pool-evidence{margin-top:22px}
-.planning-exemption{padding:14px;border:1px solid var(--line);border-radius:6px;background:#f4f8ef;margin-bottom:18px}.planning-exemption p{margin:8px 0 0}.planning-exemption .check{font-weight:600}.planning-exemption input{accent-color:var(--green)}.planning-exemption-note{color:var(--green)}.planning-exempt-badge{display:block;width:max-content;margin-top:5px;padding:2px 6px;border-radius:4px;background:#eaf2e2;color:var(--green);font-size:11px;white-space:nowrap}
+.planning-detail-dialog .dialog-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 18px}.planning-detail-dialog .dialog-header h2{margin:0;min-width:0;flex:1 1 320px}.planning-exemption{margin-left:auto;flex:0 0 auto}.planning-exemption .check{font-weight:600;white-space:nowrap}.planning-exemption input{accent-color:var(--green)}.planning-exemption-note{color:var(--green)}.planning-exempt-badge{display:block;width:max-content;margin-top:5px;padding:2px 6px;border-radius:4px;background:#eaf2e2;color:var(--green);font-size:11px;white-space:nowrap}
+.planning-record{margin-top:22px;padding:16px;border:1px solid var(--line);border-radius:7px;background:#f8faf5}.planning-record-summary{display:flex;flex-wrap:wrap;gap:6px 18px;margin-bottom:14px;font-size:13px;color:var(--muted)}.planning-record-summary strong{color:var(--ink);font-variant-numeric:tabular-nums}.planning-record th{background:#edf3e8}.planning-record td{background:#fff}.planning-record td:first-child,.planning-record td:nth-child(2){white-space:nowrap}.record-hit-badge{display:inline-block;margin-left:8px;padding:1px 6px;border-radius:4px;background:#e7f1dd;color:var(--green);font-size:11px}.planning-record p{margin:10px 0 0}
 .opportunity-score{margin:16px 0 4px;padding-top:14px;border-top:1px solid var(--line)}
 .opportunity-score p{margin:2px 0 0;line-height:1.6}
 .planning-detail-dialog .pool-evidence img{max-width:100%;border-radius:4px}

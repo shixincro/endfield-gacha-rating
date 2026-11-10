@@ -111,7 +111,7 @@ function harness(config = {}) {
       requests.push({url, body});
       if (replies.has(url)) return {ok: true, json: async () => structuredClone(replies.get(url))};
       if (url === '/api/validate' && !config.manualValidation) return {ok: true, json: async () => ({ledger: structuredClone(body.session.ledger)})};
-      return new Promise((resolve, reject) => pending.push({url, body, resolve: value => resolve({ok: true, json: async () => value}), reject}));
+      return new Promise((resolve, reject) => pending.push({url, body, resolve: (value, ok=true) => resolve({ok, json: async () => value}), reject}));
     },
   });
   vm.runInContext(model, ctx, {filename: 'ui-model.js'});
@@ -1631,6 +1631,71 @@ async function main() {
     assert(h.nodes.status.textContent.includes('0 份独立记录，2 张失败'));
     assert.equal(h.nodes.import.disabled,false);assert(h.nodes.error.textContent.includes('全部失败'));
   });
+  await test('home picker and dropzone accept TXT and JSON and use the text adapter',async()=>{
+    const accept=html.match(/id="images"[^>]*accept="([^"]+)"/)[1].split(',');
+    assert(accept.includes('.txt')&&accept.includes('.json')&&accept.includes('.png'));
+    for(const name of ['from-picker.TXT','from-drop.json']){
+      const h=await loaded(),before=h.state(),file={name,size:100,text:async()=>'\uFEFF{"synthetic":true}'};
+      if(name.endsWith('.json'))h.nodes.dropzone.ondrop({preventDefault(){},dataTransfer:{files:[file]}});
+      else h.nodes.images.onchange({target:{files:[file]}});
+      assert.equal(h.nodes.selection.textContent,name);assert(!h.nodes.import.disabled);
+      const importing=h.nodes.import.click();await tick();
+      assert(h.read('busy'));assert(h.nodes.images.disabled);assert.deepEqual(h.state(),before);
+      assert.equal(h.requests.filter(r=>r.url==='/api/import').length,0);
+      const request=h.pending.find(r=>r.url==='/api/records/import');assert(request);
+      assert.equal(request.body.name,name);assert.equal(request.body.text,'{"synthetic":true}');
+      request.resolve(record('home-'+name));await importing;await tick();
+      assert.equal(h.state().id,'home-'+name);assert(!h.read('busy'));assert(!h.nodes.images.disabled);
+    }
+  });
+  await test('home import restores saved session JSON through the restore endpoint',async()=>{
+    const h=await loaded(),saved=record('saved-home');
+    h.ctx.selected([{name:'saved.json',size:100,text:async()=>JSON.stringify(saved)}]);
+    const importing=h.nodes.import.click();await tick();
+    assert.equal(h.requests.filter(r=>r.url==='/api/import'||r.url==='/api/records/import').length,0);
+    const request=h.pending.find(r=>r.url==='/api/restore');assert(request);assert.deepEqual(request.body,saved);
+    request.resolve({...saved,id:'restored-home'});await importing;
+    assert.equal(h.state().id,'restored-home');
+  });
+  await test('mixed image and record files stay independent and a failed text import does not discard success',async()=>{
+    const h=await loaded(),image=record('image-person'),text=record('text-person');
+    h.replies.set('/api/import',{id:'mixed-batch'});
+    h.replies.set('/api/jobs/mixed-batch',{status:'done',sessions:[image],failed:0,items:[],message:'完成'});
+    h.ctx.selected([{name:'image.png',size:10},{name:'bad.txt',size:10,text:async()=>'bad'},
+                    {name:'good.json',size:10,text:async()=>'{}'}]);
+    const importing=h.nodes.import.click();await tick();
+    const imageRequest=h.requests.find(r=>r.url==='/api/import');assert.equal(imageRequest.body.files.length,1);
+    const failed=h.pending.find(r=>r.url==='/api/records/import');assert.equal(failed.body.name,'bad.txt');
+    failed.reject(Error('无法识别此记录'));await tick();
+    const good=h.pending.filter(r=>r.url==='/api/records/import').at(-1);assert.equal(good.body.name,'good.json');
+    good.resolve(text);await importing;await tick();
+    assert.equal(h.state().id,image.id);assert(h.nodes.status.textContent.includes('2 份独立记录，1 项失败'));
+    assert(h.nodes.historyDeleteFeedback.textContent.includes('bad.txt'));assert(h.nodes.error.textContent.includes('无法识别此记录'));
+    assert(!h.nodes.import.disabled);
+  });
+  await test('unsupported home selections fail before submitting any files',async()=>{
+    const h=await loaded(),before=h.state();h.ctx.selected([{name:'not-a-record.exe',size:10}]);
+    await h.nodes.import.click();assert(h.nodes.error.textContent.includes('不支持的文件'));
+    assert.deepEqual(h.state(),before);assert.equal(h.requests.filter(r=>r.url==='/api/import'||r.url==='/api/records/import').length,0);
+  });
+  await test('unrecognized format opens a persistent author-contact dialog from the home entry',async()=>{
+    const h=await loaded(),before=h.state();h.ctx.selected([{name:'future.json',size:10,text:async()=>'{}'}]);
+    const importing=h.nodes.import.click();await tick();
+    h.pending.find(r=>r.url==='/api/records/import').resolve({error:'暂不支持此记录格式，请联系作者协助适配。',code:'record_format_unrecognized'},false);
+    await importing;assert(h.nodes.recordFormatDialog.open);assert(h.nodes.recordFormatFiles.textContent.includes('future.json'));
+    assert(html.includes('暂不支持此记录格式，请联系作者协助适配。'));assert.deepEqual(h.state(),before);
+    h.advanceTimers(4000);assert(h.nodes.recordFormatDialog.open);
+    h.staticNodes.find(n=>n.dataset.closeDialog==='recordFormatDialog').click();assert(!h.nodes.recordFormatDialog.open);
+  });
+  await test('a format popup survives successful files later in the same batch',async()=>{
+    const h=await loaded();h.ctx.selected([{name:'future.txt',size:10,text:async()=>'unknown'},
+                                         {name:'valid.json',size:10,text:async()=>'{}'}]);
+    const importing=h.nodes.import.click();await tick();
+    h.pending.find(r=>r.url==='/api/records/import').resolve({error:'暂不支持此记录格式，请联系作者协助适配。',code:'record_format_unrecognized'},false);
+    await tick();h.pending.filter(r=>r.url==='/api/records/import').at(-1).resolve(record('valid-after-failure'));
+    await importing;assert.equal(h.state().id,'valid-after-failure');assert(h.nodes.recordFormatDialog.open);
+    assert(h.nodes.recordFormatFiles.textContent.includes('future.txt'));assert(h.nodes.status.textContent.includes('1 份独立记录，1 项失败'));
+  });
   await test('rapid person switches ignore an older history response',async()=>{
     const h=await loaded(),first=h.ctx.openSavedSession('slow-a'),second=h.ctx.openSavedSession('fast-b');await tick();
     const ra=h.pending.find(r=>r.url==='/api/sessions/slow-a'),rb=h.pending.find(r=>r.url==='/api/sessions/fast-b');
@@ -1852,6 +1917,52 @@ async function main() {
     const target={files:[{size,text:async()=>JSON.stringify(value)}],value:'selected.json'};
     return {target,finishing:h.nodes.restoreFile.onchange({target})};
   };
+  const importText=(h,text,name='export.txt',size=1024)=>{
+    const target={files:[{name,size,text:async()=>text}],value:name};
+    return {target,finishing:h.nodes.restoreFile.onchange({target})};
+  };
+  await test('TXT and foreign JSON use the record adapter without being mistaken for saved sessions',async()=>{
+    for(const [name,text]of [['export.txt','角色：演示\n卡池：熔火灼痕'],['export.json','\uFEFF{"info":{"uid":"demo"},"list":[]}']]){
+      const h=await historyHarness(),before=h.state(),{target,finishing}=importText(h,text,name);await tick();
+      assert(h.nodes.restore.disabled);assert(h.nodes.import.disabled);assert(h.nodes.images.disabled);assert.deepEqual(h.state(),before);
+      const request=h.pending.find(item=>item.url==='/api/records/import');assert(request);assert.equal(request.body.name,name);assert.equal(request.body.text,text.replace(/^\uFEFF/,''));
+      assert.equal(h.requests.filter(item=>item.url==='/api/restore').length,0);
+      const imported=record('imported-'+name);imported.documents=[{file:name,source_sha256:'synthetic-export'}];imported.importSummary={message:'已读取 60 抽。',warnings:['前期图鉴待确认。']};
+      request.resolve(imported);await finishing;assert.equal(h.state().id,imported.id);assert.equal(target.value,'');assert(!h.nodes.restore.disabled);
+      assert(h.nodes.historyDeleteFeedback.textContent.includes('已读取 60 抽'));assert(h.nodes.historyDeleteFeedback.textContent.includes('前期图鉴待确认'));
+      assert(h.nodes.status.textContent.includes('已导入本机'));assert(!h.nodes.error.textContent.includes('不是有效的评分记录'));
+    }
+    assert(html.includes('accept=".txt,.json,text/plain,application/json"'));assert(html.includes('导入 TXT / JSON'));
+  });
+  await test('saved session JSON with a UTF-8 BOM still uses the original restore endpoint',async()=>{
+    const h=await loaded(),saved=record('bom-session'),{finishing}=importText(h,'\uFEFF'+JSON.stringify(saved),'saved.json');await tick();
+    const request=h.pending.find(item=>item.url==='/api/restore');assert(request);assert.deepEqual(request.body,saved);assert.equal(h.requests.filter(item=>item.url==='/api/records/import').length,0);
+    request.resolve({...saved,id:'restored-bom'});await finishing;assert.equal(h.state().id,'restored-bom');
+  });
+  await test('unsupported third-party imports leave the current record intact and show a persistent error',async()=>{
+    const h=await historyHarness(),before=h.state(),{finishing}=importText(h,'unsupported export');await tick();
+    h.pending.find(item=>item.url==='/api/records/import').reject(Error('不支持此记录格式，请导出单抽明细。'));await finishing;h.advanceTimers(3500);
+    assert.deepEqual(h.state(),before);assert(!h.nodes.historyDeleteFeedback.hidden);assert(h.nodes.historyDeleteFeedback.textContent.includes('不支持此记录格式'));
+    assert(h.nodes.historyDeleteFeedback.classList.contains('has-error'));assert(!h.nodes.restore.disabled);
+  });
+  await test('history import opens the same author-contact popup for unknown formats',async()=>{
+    const h=await historyHarness(),before=h.state(),{finishing}=importText(h,'{}','new-format.json');await tick();
+    h.pending.find(r=>r.url==='/api/records/import').resolve({error:'暂不支持此记录格式，请联系作者协助适配。',code:'record_format_unrecognized'},false);
+    await finishing;assert(h.nodes.recordFormatDialog.open);assert(h.nodes.historyDialog.open);
+    assert(h.nodes.recordFormatFiles.textContent.includes('new-format.json'));assert.deepEqual(h.state(),before);
+  });
+  await test('damaged input and network errors do not trigger the unsupported-format popup',async()=>{
+    for(const message of ['JSON 内容无效，请检查导出文件。','Failed to fetch']){
+      const h=await loaded(),{finishing}=importText(h,'{broken','broken.json');await tick();
+      h.pending.find(r=>r.url==='/api/records/import').reject(Error(message));await finishing;
+      assert(!h.nodes.recordFormatDialog.open);assert(h.nodes.historyDeleteFeedback.textContent.includes(message));
+    }
+  });
+  await test('oversized individual imports fail before sending record text',async()=>{
+    const h=await loaded(),before=h.state(),{finishing}=importText(h,'{}','oversized.json',8*1024*1024+1);await finishing;
+    assert.equal(h.requests.filter(item=>item.url==='/api/records/import'||item.url==='/api/restore').length,0);assert.deepEqual(h.state(),before);
+    assert(h.nodes.historyDeleteFeedback.textContent.includes('超过8 MB'));
+  });
   await test('collection import restores independent sessions with corrections intact and locks conflicting actions',async()=>{
     const h=await historyHarness(),records=['甲','乙','丙'].map((name,i)=>{
       const saved=record('source-'+i,[pool({quota:5000+i*180})]);saved.displayName=name;
@@ -2197,7 +2308,7 @@ async function main() {
     if(extra.planningExempt)saved.ledger.character.pools[0].planningExempt=true;
     h.ctx.loadSession(saved);h.nodes.revealLuck.click();h.ctx.openPlanningDetail(h.state().result.planning.pools[0]);return h;
   };
-  const exemptionChoice=h=>findField(h.nodes.planningDetailContent,'豁免此项亏损');
+  const exemptionChoice=h=>findField(h.nodes.planningExemption,'豁免此项亏损');
   const toggleExemption=(h,checked)=>{const input=exemptionChoice(h);input.checked=checked;return input.onchange();};
   const finishExemption=async(h)=>{
     const request=h.pending.filter(p=>p.url==='/api/score').at(-1),updated=structuredClone(request.body.session);
@@ -2216,7 +2327,7 @@ async function main() {
     await finishExemption(h);await saving;
     assert(h.nodes.planningHighlights.textContent.includes('自律狂人'));assert(h.nodes.planningHighlights.textContent.includes('0.00'));
     assert.equal(h.nodes.planningTopPools.querySelectorAll('button').length,0);assert(h.nodes.planning.textContent.includes('已豁免'));
-    assert(h.nodes.planningDetailContent.textContent.includes('原亏损 170.56 抽 · 本次计入 0.00 抽'));assert(!exemptionChoice(h).disabled);
+    assert(h.nodes.planningDetailTitle.textContent.includes('资源损耗 0.00 抽'));assert(!exemptionChoice(h).disabled);
     assert(h.nodes.planningDetailDialog.open);assert.equal(h.read('luckRevealed'),true);assert.deepEqual(h.state().result.axes,before.result.axes);
     assert.equal(h.state().result.planning.pools[0].opportunity.value,12);assert.equal(h.state().reviewed,true);
   });
@@ -2253,7 +2364,7 @@ async function main() {
   });
   for(const extra of [{status:'partial',localLoss:null,countedLoss:null},{status:'provisional',countedLoss:null},{localLoss:-3,countedLoss:-3},{localLoss:0,countedLoss:0}]){
     await test('only completed positive losses can be newly exempted: '+JSON.stringify(extra),async()=>{
-      const h=await exemptionHarness(extra);assert(exemptionChoice(h).disabled);assert(h.nodes.planningDetailContent.textContent.includes('仅已完成计算的正亏损'));
+      const h=await exemptionHarness(extra);assert(exemptionChoice(h).disabled);assert(!h.nodes.planningDetailContent.textContent.includes('仅已完成计算的正亏损'));
       const marked=await exemptionHarness({...extra,planningExempt:true});assert(exemptionChoice(marked).checked);assert(!exemptionChoice(marked).disabled);
       toggleExemption(marked,false);await tick();await finishExemption(marked);assert.equal(marked.state().ledger.character.pools[0].planningExempt,false);
       if(extra.status)assert(marked.nodes.planningHighlights.textContent.includes('数据不足'));
@@ -2262,6 +2373,35 @@ async function main() {
   await test('closing loss details during save never reopens them when the response completes',async()=>{
     const h=await exemptionHarness();toggleExemption(h,true);await tick();escape(h.nodes.planningDetailDialog);await finishExemption(h);
     assert(!h.nodes.planningDetailDialog.open);assert(h.nodes.planningHighlights.textContent.includes('自律狂人'));
+  });
+  await test('loss exemption is a compact title-right checkbox without the old explanatory panel',async()=>{
+    const h=await exemptionHarness();assert.equal(h.nodes.planningExemption.textContent,'豁免此项亏损');assert.equal(h.nodes.planningExemption.querySelectorAll('input').length,1);
+    assert(!h.nodes.planningDetailContent.textContent.includes('豁免后'));assert(!h.nodes.planningDetailContent.textContent.includes('原亏损'));
+    assert(/<div class="dialog-header"><h2 id="planningDetailTitle">[^<]*<\/h2><div id="planningExemption"/.test(html));
+  });
+  await test('loss details without a screenshot show current main rush and token records',async()=>{
+    const h=await exemptionHarness(),saved=h.state();saved.documents=[{file:'synthetic.txt',source_sha256:'text-source'}];
+    Object.assign(saved.ledger.character.pools[0],{total:245,tail:5,initialPity:8,events:[{at:22,character:'余烬',source:'main'},{at:120,character:'莱万汀',source:'main',forced:true}],rushUsed:true,rushAt:30,rush:[{at:4,character:'莱万汀'}],tokens:[{at:240,character:'莱万汀'}]});
+    h.ctx.loadSession(saved);h.ctx.openPlanningDetail(saved.result.planning.pools[0]);const block=h.nodes.planningDetailContent.querySelector('.planning-record');assert(block);
+    assert(block.textContent.includes('主池总抽数 245 抽'));assert(block.textContent.includes('期初水位 8 抽'));assert(block.textContent.includes('期末水位 5 抽'));
+    const rows=block.querySelectorAll('tr').map(row=>row.textContent);assert(rows.some(text=>text.includes('主池六星第 22 抽余烬歪')));
+    assert(rows.some(text=>text.includes('主池六星第 120 抽莱万汀120 保底')));assert(rows.some(text=>text.includes('加急六星第 4 抽莱万汀UP')));
+    assert(rows.some(text=>text.includes('赠送信物第 240 抽莱万汀不计六星')));assert(block.textContent.includes('主池第 30 抽时使用'));
+    assert(!h.nodes.planningDetailContent.textContent.includes('此记录的原图当前不可用'));assert.equal(h.nodes.planningDetailContent.querySelectorAll('img').length,0);
+  });
+  await test('no-hit text records distinguish confirmed unused rush from unknown rush and water',async()=>{
+    for(const rushUsed of [true,false,null]){
+      const h=await exemptionHarness(),saved=h.state();saved.documents=[{file:'synthetic.json'}];Object.assign(saved.ledger.character.pools[0],{events:[],rush:[],rushUsed,initialPity:null,tail:null});
+      h.ctx.loadSession(saved);h.ctx.openPlanningDetail(saved.result.planning.pools[0]);const text=h.nodes.planningDetailContent.querySelector('.planning-record').textContent;
+      assert(text.includes('未记录六星出货'));assert(text.includes('期初水位 未知'));assert(text.includes('期末水位 未知'));
+      assert(text.includes(rushUsed===true?'未出六星':rushUsed===false?'未使用':'使用情况未知'));
+    }
+  });
+  await test('a missing original screenshot falls back to the saved text records after image load failure',async()=>{
+    const h=await exemptionHarness();h.read('session.ledger.character.pools[0].evidence={sourceImage:"/data/missing/source.png"}');h.ctx.openPlanningDetail(h.state().result.planning.pools[0]);
+    const image=h.nodes.planningDetailContent.querySelector('img');assert(image);assert.equal(image.src,'/data/missing/source.png');assert(!h.nodes.planningDetailContent.querySelector('.planning-record'));
+    image.onerror();assert(h.nodes.planningDetailContent.querySelector('.planning-record').textContent.includes('第 50 抽莱万汀UP'));
+    assert.equal(h.nodes.planningDetailContent.querySelectorAll('img').length,0);
   });
   const enableScenario=h=>{h.nodes.hypothesisEnabled.checked=true;return h.nodes.hypothesisEnabled.onchange();};
   const finishScenario=async(h)=>{
