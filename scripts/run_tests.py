@@ -16,6 +16,7 @@ def run(args, cwd=ROOT):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--ocr', action='store_true', help='Also run OCR tests (avatar assets required).')
+    parser.add_argument('--browser-url', help='Also test a built static browser site (Playwright and a browser required).')
     args = parser.parse_args()
     node = shutil.which('node')
     if not node:
@@ -27,9 +28,13 @@ def main():
     run([node,'--test',*map(str,js_tests)])
     run([sys.executable,'-X','utf8','-m','unittest','discover','-s','tools/weapon_score_v2','-p','test_*.py'])
     run([sys.executable,'-X','utf8','-m','unittest','discover','-s','scripts','-p','test_*.py'])
+    run([sys.executable,'-X','utf8','browser/tests/python_bridge_test.py'])
+    run([node,'--test','browser/tests/weapon.test.mjs'])
     if args.ocr:
         run([sys.executable,'-X','utf8','scripts/check_environment.py'])
         run([sys.executable,'-X','utf8','-m','unittest','discover','-s','tools/gacha_ocr_prototype','-p','test_*.py'])
+    if args.browser_url:
+        run([node,'browser/tests/browser-integration.cjs',args.browser_url])
 
 
 if __name__ == '__main__':

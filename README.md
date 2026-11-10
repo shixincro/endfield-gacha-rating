@@ -2,6 +2,8 @@
 
 在本机识别小黑盒抽卡截图，核对记录，并计算六维欧非与规划亏损。网页、识图和评分均在本机运行。
 
+新增浏览器本地计算版本：静态网站即可承载，访问者无需安装 Python 或 Node.js。当前为本地验证版本，尚未发布在线地址；构建方式和验证范围见 [浏览器版说明](docs/BROWSER.md)。
+
 维护者：[shixincro](https://github.com/shixincro)。原创代码使用 [MIT 许可证](LICENSE)。游戏素材与第三方依赖遵循各自的许可，见 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
 ## 功能
@@ -66,9 +68,9 @@ py -3.12 -m venv .venv
 
 ### 数据保存
 
-截图、裁片和记录保存在 `tools/gacha_rating_app/data/`，该目录已被 Git 忽略。备份本机记录时请连同该目录一起备份。导出的 JSON 含识别数据及修正信息，原图使用本机引用，不会自动内嵌原图。
+桌面版截图、裁片和记录保存在 `tools/gacha_rating_app/data/`，该目录已被 Git 忽略。备份本机记录时请连同该目录一起备份。浏览器版改为当前网站、当前浏览器的 IndexedDB 存储，清除网站数据会删除记录。两版可通过本工具导出的 JSON 交换账本；JSON 不内嵌原图，没有原图时详情显示文字记录。
 
-本项目的服务只用于本机访问，未设计账号系统或公网部署功能。提交 Issue 时请使用演示记录或脱敏材料，避免附带玩家 UID、原始截图与私人记录。
+桌面版 Python 服务只用于本机访问；在线使用应部署浏览器版生成的静态目录，不要把桌面版服务直接暴露到公网。浏览器版不提供账号或云同步。提交 Issue 时请使用演示记录或脱敏材料，避免附带玩家 UID、原始截图与私人记录。
 
 ## 算法与局限
 
@@ -92,6 +94,7 @@ tools/gacha_rating_app/      本地服务、网页、账本校验、角色评分
 tools/gacha_ocr_prototype/   OCR、头像定位和匹配、素材清单
 tools/character_five_score/ 五星评分与冻结校准参数
 tools/weapon_score_v2/      武器 DP 与评分
+browser/                    浏览器 Worker、IndexedDB、武器 JS、Python/OCR 桥
 scripts/                    安装辅助、自检和测试入口
 examples/                   合成演示记录
 docs/                       算法说明

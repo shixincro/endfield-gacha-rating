@@ -17,6 +17,7 @@
 | 组件 | 许可证或说明 | 上游 |
 | --- | --- | --- |
 | Python | PSF 等随附许可 | <https://www.python.org/psf/license/> |
+| Pyodide | MPL-2.0；其 CPython 与第三方包分别遵循自身许可 | <https://github.com/pyodide/pyodide/blob/0.29.3/LICENSE> |
 | Node.js | MIT 及随附第三方许可 | <https://github.com/nodejs/node/blob/main/LICENSE> |
 | RapidOCR | Apache-2.0 | <https://github.com/RapidAI/RapidOCR/blob/main/LICENSE> |
 | PaddleOCR 模型 | RapidOCR 依赖所含 PP-OCR 检测、识别和分类模型；上游 Apache-2.0 | <https://github.com/PaddlePaddle/PaddleOCR/blob/main/LICENSE> |
@@ -27,6 +28,12 @@
 | Shapely / GEOS | Shapely BSD-3-Clause，GEOS LGPL-2.1 | <https://shapely.readthedocs.io>, <https://libgeos.org> |
 
 完整依赖及传递依赖由 pip 解析。若制作二进制分发包，需要包含实际分发组件的许可证，并重新核对游戏素材的分发范围。
+
+## 浏览器构建
+
+浏览器版使用 Pyodide 0.29.3 和 ONNX Runtime Web 1.23.2。准备脚本保留 Pyodide LICENSE、ONNX Runtime LICENSE 与 ThirdPartyNotices，OCR 资源保留 RapidOCR/PaddleOCR 的 Apache-2.0 原文；Pyodide wheel 包内含各自许可证。运行库与模型不进 Git。
+
+本地预览构建会把已下载的游戏头像复制到生成目录，用于浏览器内匹配；这不改变头像的权利归属或授予公开再分发许可。构建目录与代码仓库的分发范围应分别检查。
 
 ## Windows 便携下载包
 

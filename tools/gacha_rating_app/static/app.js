@@ -61,6 +61,7 @@ function showNotice(id,message,running=false){
 function error(message){showNotice('error',message);}
 function status(message,running=false){showNotice('status',message,running);}
 async function api(path,body){
+  if(window.BrowserRating)return window.BrowserRating.api(path,body);
   const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-App-Token':token},body:JSON.stringify(body)});
   const value=await response.json();
   if(!response.ok){const failure=Error(value.error||'请求失败');if(typeof value.code==='string')failure.code=value.code;throw failure;}
@@ -375,7 +376,8 @@ function cancelResults(){
   status('');
 }
 function renderSourceEvidence(target,docs){
-  for(const d of docs){const src=d.sourceImage;if(typeof src!=='string'||!src.startsWith('/data/'))continue;
+  for(const d of docs){let src=d.sourceImage;if(typeof src!=='string'||!src.startsWith('/data/'))continue;
+    if(window.BrowserRating){src=window.BrowserRating.evidenceURL(src);if(!src)continue;}
     const figure=el('figure',undefined,'pool-evidence'),a=el('a'),img=el('img');a.href=src;a.target='_blank';a.rel='noopener';img.src=src;img.alt=d.file||'识别原图';img.loading='lazy';a.append(img);figure.append(a,el('figcaption',d.file||'识别原图'));target.append(figure);
   }
 }
@@ -887,7 +889,8 @@ function renderCharacterReview(focusEvent=null,focusPoolId=null){
       if(type==='主池')pos.append(field('累计抽数',event.at,v=>{event.at=v;updatePoolWater(p);}));else pos.textContent='独立十连';row.append(pos);
       const char=el('td');char.append(select(event.character,[['','未识别'],...characters.map(n=>[n,n])],v=>{event.character=v||null;event.identitySource='manual';}));row.append(char);
       const evidence=el('td'),ev=event.evidence,crop=event.crop||ev?.crop||ev?.avatarCrop;
-      if(crop?.startsWith('/data/')){const a=el('a');a.href=crop;a.target='_blank';a.rel='noopener';const img=el('img');img.src=crop;img.alt='原图头像';a.append(img);evidence.append(a);}
+      const cropURL=window.BrowserRating?window.BrowserRating.evidenceURL(crop):crop;
+      if(crop?.startsWith('/data/')&&cropURL){const a=el('a');a.href=cropURL;a.target='_blank';a.rel='noopener';const img=el('img');img.src=cropURL;img.alt='原图头像';a.append(img);evidence.append(a);}
       row.append(evidence);
       const actions=el('td');actions.append(button('移除行',()=>{(type==='主池'?p.events:p.rush).splice(index,1);if(type==='主池')updatePoolWater(p);renderCharacterReview();}));row.append(actions);table.append(row);
       if(event===focusEvent){block.open=true;focusInput=pos.querySelector('input')||char.querySelector('select');}
@@ -1214,7 +1217,7 @@ function renderPlanningRecord(target,p){
 }
 function renderPlanningEvidence(target,p,row){
   const evidence=el('div'),src=poolSource(p);target.append(evidence);
-  if(typeof src==='string'&&src.startsWith('/data/')){
+  if(typeof src==='string'&&src.startsWith('/data/')&&(!window.BrowserRating||window.BrowserRating.evidenceURL(src))){
     renderSourceEvidence(evidence,[{sourceImage:src,file:(row.banner||row.id)+' · 记录图'}]);
     const img=evidence.querySelector('img');
     if(img)img.onerror=()=>{evidence.replaceChildren();renderPlanningRecord(evidence,p);};
@@ -1504,4 +1507,4 @@ async function refreshHistory(){
     historyRows=rows.filter(row=>!deletedRecordIds.has(row.id));const available=new Set(historyRows.map(row=>row.id));historySelected=new Set([...historySelected].filter(id=>available.has(id)));renderHistory();return true;
   }catch(e){if(request===historyRequestId){$('historyDeleteFeedback').hidden=false;$('historyDeleteFeedback').textContent='读取历史失败：'+displayText(e.message);updateHistoryControls();}return false;}
 }
-(async()=>{try{const config=await api('/api/config');token=config.token;planningVersion=typeof config.planningVersion==='string'?config.planningVersion:'';characterVersion=typeof config.characterVersion==='string'?config.characterVersion:'';weaponVersion=typeof config.weaponVersion==='string'?config.weaponVersion:'';recognitionVersion=typeof config.recognitionVersion==='string'?config.recognitionVersion:'';scoringScenarioVersion=typeof config.scoringScenarioVersion==='string'?config.scoringScenarioVersion:'';interruptionVersion=typeof config.interruptionVersion==='string'?config.interruptionVersion:'';await refreshHistory();}catch(e){error('本地服务未连接：'+e.message);}})();
+(async()=>{try{const config=await api('/api/config');token=config.token;planningVersion=typeof config.planningVersion==='string'?config.planningVersion:'';characterVersion=typeof config.characterVersion==='string'?config.characterVersion:'';weaponVersion=typeof config.weaponVersion==='string'?config.weaponVersion:'';recognitionVersion=typeof config.recognitionVersion==='string'?config.recognitionVersion:'';scoringScenarioVersion=typeof config.scoringScenarioVersion==='string'?config.scoringScenarioVersion:'';interruptionVersion=typeof config.interruptionVersion==='string'?config.interruptionVersion:'';await refreshHistory();}catch(e){error((window.BrowserRating?'浏览器计算环境未就绪：':'本地服务未连接：')+e.message);}})();
