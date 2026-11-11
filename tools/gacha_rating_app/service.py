@@ -160,17 +160,22 @@ def score_session_result(documents, ledger, scenario, *, reviewed=False):
 def score_ledger(ledger):
     validate_ledger(ledger)
     from history_interruption import project_ledger, refresh_projected_mechanics
+    planning_ledger, _ = project_ledger(ledger, for_planning=True)
     ledger, interruption = project_ledger(ledger)
     if interruption['enabled']:
         refresh_projected_mechanics(ledger)
+        refresh_projected_mechanics(planning_ledger)
     start = time.perf_counter()
     warnings = []
     if interruption['enabled']:
-        warnings.append('已按中断修正排除所选卡池；后续各段从0水位和所选免费额度开始，缺失出货与图鉴未补造。')
+        warnings.append('已按中断修正排除所选卡池；补充六星仅用于图鉴，补充水位仅用于欧非，亏损仍按0水位重置计算。')
     character = ledger.get('character') or {'pools': []}
     node = shutil.which('node')
     if not node:
-        raise RuntimeError('未找到Node运行环境，请安装Node.js并确保node命令在PATH中可用。')
+        fallback = Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node.exe'
+        node = str(fallback) if fallback.exists() else None
+    if not node:
+        raise RuntimeError('未找到Node运行环境，角色评分无法启动。')
     process = subprocess.run([node, str(ROOT/'score_cli.js')], input=json.dumps(character, ensure_ascii=False),
                              text=True, encoding='utf-8', capture_output=True, timeout=25,
                              creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
@@ -211,7 +216,7 @@ def score_ledger(ledger):
             if axis in axes:
                 axes[axis] = unscored(issue.get('message', '导入记录存在冲突'))
     from planning import score_planning
-    planning = score_planning(character)
+    planning = score_planning(planning_ledger.get('character') or {'pools': []})
     planning_conflicts = [i for i in conflicts if not i.get('axes') or any(a in i['axes'] for a in ('characterSix','up','planning'))]
     if planning_conflicts:
         from opportunity import unavailable

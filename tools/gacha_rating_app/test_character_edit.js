@@ -11,6 +11,24 @@ const record = pools => ({pools,initialPity:pools[0]?.initialPity ?? null,initia
 const nextPool = extra => pool({id:'p1',index:1,banner:edit.BANNERS[1],up:edit.LIMITED[1],total:20,
   initialPity:10,tail:30,events:[],rushUsed:false,rushAt:null,...extra});
 
+test('interruption supplements validate ownership and pity separately and preserve stored facts',()=>{
+  const draft=record([pool(),nextPool()]);
+  for(const info of [null,[],{initialPity:true},{initialPity:-1},{initialPity:80},{initialPity:null},
+    {initialPity:1.5},{initialPity:'20'},{catalogComplete:1},{ownedSixStars:null},
+    {ownedSixStars:['未知']},{ownedSixStars:['骏卫','俊卫']}]){
+    draft.interruptionCorrection={excludedIndices:[0],resumeInfo:{1:info}};
+    assert.notEqual(edit.validateInterruption(draft),'',JSON.stringify(info));
+  }
+  draft.interruptionCorrection={excludedIndices:[0],resumeInfo:{1:{initialPity:25,ownedSixStars:['俊卫'],catalogComplete:true}}};
+  const original=structuredClone(draft);
+  assert.equal(edit.validateInterruption(draft),'');
+  const luck=edit.projectCharacter(draft),planning=edit.projectCharacter(draft,{forPlanning:true});
+  assert.equal(luck.character.pools[0].initialPity,25);assert.equal(luck.character.pools[0].tail,45);
+  assert.equal(planning.character.pools[0].initialPity,0);assert.equal(planning.character.pools[0].tail,20);
+  assert.deepEqual(luck.character.pools[0].interruptionCatalog,{ownedSixStars:['骏卫'],catalogComplete:true});
+  assert.deepEqual(draft,original);
+});
+
 test('interruption across a missing banner resets only the effective record and is reversible',()=>{
   const before=pool({id:'p6',index:6,banner:edit.BANNERS[6],up:edit.LIMITED[6],total:30,initialPity:0,tail:30,events:[],rushUsed:false,rushAt:null});
   const after=pool({id:'p8',index:8,banner:edit.BANNERS[8],up:edit.LIMITED[8],total:70,initialPity:30,tail:0,

@@ -98,6 +98,10 @@ function extract(record, catalog, {makeLimited=true}={}) {
     // A known opening collection cannot resolve New after unobserved banners.
     // Match the ledger/planning boundary instead of rewarding assumed New.
     if(pool.interruptionBefore===true || record.completeHistory!==true&&ownershipIndex>=0&&index>ownershipIndex+1)ownedKnown=false;
+    if(pool.interruptionBefore===true) {
+      for(const name of pool.interruptionCatalog?.ownedSixStars??[])owned.add(nameOf(name));
+      ownedKnown=pool.interruptionCatalog?.catalogComplete===true;
+    }
     ownershipIndex=index;
     const off=(index===0?[1,2]:index===1?[0,2]:[index-1,index-2]).map(i=>LIMITED[i]);
     const missing=()=>ownedKnown?off.filter(n=>!owned.has(n)).length:0;

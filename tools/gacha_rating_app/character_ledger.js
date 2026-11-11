@@ -107,8 +107,12 @@ function scoreCharacter(record) {
       // middle banner. Keep known ownership, but do not invent later New hits.
       ownershipKnown=false;
       warnings.push(pool.interruptionBefore===true
-        ?`${label}前已启用中断修正，水位从0开始，后续不猜测缺失期间的限定New`
+        ?`${label}前已启用中断修正，按补充水位和图鉴继续评分`
         :`${label}前存在缺失卡池，水位重新以该池已知证据衔接`);
+    }
+    if(pool.interruptionBefore===true) {
+      for(const name of pool.interruptionCatalog?.ownedSixStars??[])owned.add(characterName(name));
+      ownershipKnown=pool.interruptionCatalog?.catalogComplete===true;
     }
     previousIndex=index;
     const id=pool.id??index;
@@ -126,7 +130,7 @@ function scoreCharacter(record) {
       if(!integer(pool.initialPity,0,79)||(pity!=null&&pool.initialPity!==pity))block(`${label}期初水位与前池结尾不一致`,first3);
       else if(pity==null){excludedMainDraws+=unknownDraws;unknownDraws=0;pity=pool.initialPity;origin=pity;}
     }
-    if(pool.interruptionBefore===true&&pool.initialPity!==0)block(`${label}中断修正后的期初水位必须为0`,first3);
+    if(pool.interruptionBefore===true&&!integer(pool.initialPity,0,79))block(`${label}中断修正后的期初水位须为0—79`,first3);
     const rushKnown=typeof pool.rushUsed==='boolean';
     if(!rushKnown)block(`${label}的加急是否实际使用尚未确认`);
     if(pool.rushUsed===true) {

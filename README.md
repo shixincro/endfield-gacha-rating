@@ -31,7 +31,7 @@
 
 ### Windows 便携版
 
-在 [Releases 下载页面](https://github.com/shixincro/endfield-gacha-rating/releases/latest) 下载 `EndfieldGacha-Windows-x64-v0.1.0.zip`，完整解压后双击“启动抽卡工具.cmd”。包内已包含 Python、Node.js 和 OCR 模型，不需要另外安装。
+下载 [Windows x64 便携版 v0.2.0](https://github.com/shixincro/endfield-gacha-rating/releases/download/v0.2.0/EndfieldGacha-Windows-x64-v0.2.0.zip)，完整解压后双击“启动抽卡工具.cmd”。包内已包含 Python、Node.js 和 OCR 模型，不需要另外安装。
 
 首次启动会联网准备头像素材，之后可离线使用。若下载暂时失败，可先导入 TXT / JSON，联网后运行“下载头像素材.cmd”。停止后台服务请双击“停止抽卡工具.cmd”。
 
@@ -68,6 +68,8 @@ py -3.12 -m venv .venv
 2. 用“限定池识别结果”修正角色信息，用“武器修正”填写武器配置。红色入口表示存在待处理矛盾，绿色表示记录自洽。
 3. 截图外的记忆记录通过“手动补充记录”追加。截图中的“已垫”是原记录推算值，补充后会重新计算相连卡池的水位。
 4. 点击六维区域揭晓评分，使用“保存结果”复制结果图，或“保存记录 JSON”备份完整记录。
+
+记录丢失时，可在“限定池识别结果 → 中断修正”排除缺失卡池，并在恢复点补充六星图鉴与起始水位。补充六星只更新持有图鉴，不增加抽数或出货数；图鉴补齐后勾选“此处六星图鉴已补全”。补充水位只用于欧非，亏损估值仍按中断后的零水位计算。
 
 首页和“本机历史记录”中的“导入 TXT / JSON”均可导入第三方记录或恢复本工具的备份。可以先导入 [`examples/demo-session.json`](examples/demo-session.json) 体验功能，它是人工构造的演示数据。复刻池和辉光庆典作为辅助记录保存，暂不参与评分；仅含这类池的文件也能保存。
 

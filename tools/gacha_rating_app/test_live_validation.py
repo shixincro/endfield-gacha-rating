@@ -94,6 +94,42 @@ class CurrentLedgerTests(unittest.TestCase):
         again = revalidate_current_ledger(self.documents, checked, reviewed=True)
         self.assertEqual(again, checked)
 
+    def test_zero_hit_placeholder_requires_explicit_pool_confirmation(self):
+        raw = self.documents[0]['pools'][0]
+        raw.update(total=30, tail=30, events=[], rush=[], rush_present=True,
+                   rushUsed=True, rushAt=30, needs_review=['placeholder_needs_review'],
+                   issues=[issue('placeholder_needs_review', '占位识别不明', 'error')])
+        self.ledger = build_ledger(self.documents)
+        pool = self.ledger['character']['pools'][0]
+        pool['initialPity'] = 0
+        self.assertIn('placeholder_needs_review', codes(self.check()['character']['pools'][0]))
+        pool['quota'] += 1
+        self.assertIn('placeholder_needs_review', codes(self.check()['character']['pools'][0]))
+        pool['eventReviewConfirmed'] = True
+        before, evidence = copy.deepcopy(self.ledger), copy.deepcopy(self.documents)
+        with patch('importer._prototype', side_effect=AssertionError('must not OCR')):
+            checked = self.check()
+        self.assertEqual(checked['character']['pools'][0]['issues'], [])
+        self.assertEqual(checked['character']['pools'][0]['events'], [])
+        self.assertEqual(checked['character']['pools'][0]['rush'], [])
+        self.assertEqual(self.ledger, before)
+        self.assertEqual(self.documents, evidence)
+        self.assertEqual(revalidate_current_ledger(self.documents, checked, reviewed=True), checked)
+
+    def test_confirmed_zero_hit_placeholder_does_not_hide_other_errors(self):
+        raw = self.documents[0]['pools'][0]
+        raw.update(total=30, tail=30, events=[], rush=[], rush_present=True,
+                   rushUsed=True, rushAt=30,
+                   issues=[issue('placeholder_needs_review', '占位识别不明', 'error'),
+                           issue('unrecognized_image_detail', '原图其他疑点', 'error')])
+        self.ledger = build_ledger(self.documents)
+        pool = self.ledger['character']['pools'][0]
+        pool.update(eventReviewConfirmed=True, initialPity=0, tail=29)
+        checked = self.check()['character']['pools'][0]
+        self.assertNotIn('placeholder_needs_review', codes(checked))
+        self.assertIn('unrecognized_image_detail', codes(checked))
+        self.assertIn('local_tail_conflict', codes(checked))
+
     def test_legacy_generated_event_diagnostics_do_not_become_opaque(self):
         event = self.ledger['character']['pools'][0]['events'][0]
         event['needsReview'] = '累计出货位置缺失或无效'

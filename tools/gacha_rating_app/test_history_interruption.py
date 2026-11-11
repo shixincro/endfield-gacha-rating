@@ -3,6 +3,8 @@ import copy
 import json
 from pathlib import Path
 import tempfile
+import shutil
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -109,6 +111,78 @@ class InterruptionProjectionTests(unittest.TestCase):
         self.assertEqual(result['planning']['pools'][1]['actual']['permanent'], 60)
         self.assertTrue(all(value >= 0 for value in first_up(30, 30, 0, False)))
 
+    def test_supplemented_pity_only_changes_luck_and_not_planning_or_facts(self):
+        data = ledger()
+        baseline = score_ledger(data)
+        original = copy.deepcopy(data)
+        data['character']['interruptionCorrection']['resumeInfo'] = {'8': {'initialPity': 15}}
+        supplemented = copy.deepcopy(data)
+        result = score_ledger(data)
+        self.assertEqual(data, supplemented)
+        self.assertEqual(data['character']['pools'], original['character']['pools'])
+        self.assertEqual(result['planning'], baseline['planning'])
+        self.assertEqual(result['character']['counts'], baseline['character']['counts'])
+        for key in ('characterSix', 'up'):
+            self.assertNotEqual(result['axes'][key]['score'], baseline['axes'][key]['score'])
+        self.assertEqual(result['axes']['up']['details']['completed'][0]['initialPity'], 15)
+        # A contradictory luck-only override must not suppress resource quotes.
+        data['character']['interruptionCorrection']['resumeInfo']['8']['initialPity'] = 40
+        result = score_ledger(revalidate_current_ledger(documents(), data))
+        self.assertIsNone(result['axes']['characterSix']['score'])
+        self.assertEqual(result['planning'], baseline['planning'])
+
+    def test_catalog_supplement_restores_ownership_without_becoming_a_hit(self):
+        data = ledger([pool(6, 10, [(10, '弭弗')]), pool(8, 20, [(10, '卡缪')])])
+        baseline = score_ledger(data)
+        self.assertEqual(baseline['planning']['pools'][1]['opportunity']['status'], 'partial')
+        data['character']['interruptionCorrection']['resumeInfo'] = {
+            '8': {'ownedSixStars': ['诀'], 'catalogComplete': False}}
+        partial = score_ledger(data)
+        self.assertEqual(partial['planning']['pools'][1]['opportunity']['value'], 0)
+        self.assertEqual(partial['axes']['limited']['details']['identities'][-1]['weight'], 1)
+        data['character']['interruptionCorrection']['resumeInfo']['8']['catalogComplete'] = True
+        result = score_ledger(data)
+        self.assertEqual(result['axes']['limited']['details']['identities'][-1]['weight'], 2)
+        for key in ('main', 'total', 'six', 'up', 'quota'):
+            self.assertEqual(result['character']['counts'][key], baseline['character']['counts'][key])
+        for key in ('characterSix', 'up'):
+            self.assertEqual(result['axes'][key], baseline['axes'][key])
+        self.assertEqual(result['axes']['five']['score'], baseline['axes']['five']['score'])
+        data['character']['pools'][1]['events'][0]['character'] = '弭弗'
+        retained = score_ledger(data)
+        self.assertEqual(retained['axes']['limited']['details']['identities'][-1]['weight'], 1)
+
+    def test_full_catalog_makes_not_owned_target_quote_calculable(self):
+        data = ledger([pool(6, 10, [(10, '弭弗')]), pool(8, 20)])
+        data['character']['interruptionCorrection']['resumeInfo'] = {'8': {'catalogComplete': True}}
+        result = score_ledger(data)
+        self.assertEqual(result['planning']['pools'][1]['opportunity']['status'], 'ok')
+        self.assertIsNotNone(result['planning']['pools'][1]['opportunity']['value'])
+
+    def test_resume_settings_are_strict_and_python_js_projections_agree(self):
+        for info in (None, [], {'initialPity': True}, {'initialPity': -1}, {'initialPity': 80},
+                     {'initialPity': None}, {'initialPity': 1.5}, {'initialPity': '20'},
+                     {'catalogComplete': 1}, {'ownedSixStars': None}, {'ownedSixStars': ['未知']},
+                     {'ownedSixStars': ['俊卫', '骏卫']}):
+            with self.subTest(info=info), self.assertRaises(ValueError):
+                normalize_correction({'excludedIndices': [7], 'resumeInfo': {'8': info}})
+        for info in (None, [], {'08': {}}, {'13': {}}):
+            with self.subTest(resume=info), self.assertRaises(ValueError):
+                normalize_correction({'excludedIndices': [7], 'resumeInfo': info})
+        data = ledger([pool(6, 30), pool(8, 10, initial=30), pool(9, 20, [(20, '梨诺')], 40)])
+        data['character']['interruptionCorrection']['resumeInfo'] = {
+            '8': {'initialPity': 25, 'ownedSixStars': ['俊卫', '弭弗'], 'catalogComplete': True}}
+        original = copy.deepcopy(data)
+        js = "const e=require('./static/character-edit');let t='';process.stdin.on('data',s=>t+=s);process.stdin.on('end',()=>{const c=JSON.parse(t);process.stdout.write(JSON.stringify([e.projectCharacter(c),e.projectCharacter(c,{forPlanning:true})]));});"
+        result = subprocess.run([shutil.which('node'), '-e', js], cwd=Path(__file__).parent,
+                                input=json.dumps(data['character']), text=True, encoding='utf-8',
+                                capture_output=True, check=True)
+        for expected, planning in zip(json.loads(result.stdout), (False, True)):
+            character, summary = project_character(data['character'], for_planning=planning)
+            self.assertEqual(expected, {'character': character, 'summary': summary})
+            self.assertEqual(project_character(character, for_planning=planning)[0], character)
+        self.assertEqual(data, original)
+
 
 class InterruptionFlowTests(unittest.TestCase):
     def test_corrected_wait_scores_and_cancel_restores_original_failure(self):
@@ -146,6 +220,17 @@ class InterruptionFlowTests(unittest.TestCase):
         self.assertIsNotNone(preview['after']['axes']['up']['score'])
         self.assertEqual(data, before)
 
+    def test_hypothesis_uses_supplemental_luck_pity_without_changing_planning_baseline(self):
+        data = ledger([pool(6, 30), pool(8, 20, initial=30)])
+        planning = score_ledger(data)['planning']
+        data['character']['interruptionCorrection']['resumeInfo'] = {'8': {'initialPity': 15}}
+        original = copy.deepcopy(data)
+        preview = preview_hypothesis(documents(), data, 'pool-8', 'next-six-80', choices={'65': '诀'})
+        self.assertEqual((preview['plan']['fromPity'], preview['plan']['toTotal']), (35, 65))
+        self.assertEqual(preview['before']['planning'], planning)
+        self.assertIsNotNone(preview['after']['axes']['up']['score'])
+        self.assertEqual(data, original)
+
     def test_hypothesis_with_existing_excluded_pool_keeps_scope_and_source_totals(self):
         data = ledger([pool(6, 30), pool(7, 10, initial=30), pool(8, 20, initial=40)])
         docs = documents()
@@ -165,6 +250,8 @@ class InterruptionFlowTests(unittest.TestCase):
             with patch.object(server, 'DATA', Path(temp)), patch('importer._prototype', side_effect=AssertionError('No OCR')):
                 record = {'schemaVersion':'gacha-rating-session-v1','id':'d'*32, 'revision':1, 'updatedAt':1,
                           'documents':documents(), 'ledger':ledger(), 'reviewed':True}
+                record['ledger']['character']['interruptionCorrection']['resumeInfo'] = {
+                    '8': {'initialPity': 15, 'ownedSixStars': ['卡缪'], 'catalogComplete': True}}
                 path = server.DATA/record['id']/'session.json'
                 server.save_json(path, record)
                 original = path.read_bytes()
@@ -177,6 +264,8 @@ class InterruptionFlowTests(unittest.TestCase):
                 self.assertIsNotNone(saved['result']['axes']['up']['score'])
                 code, opened = handler('GET', '/api/sessions/'+saved['id'])
                 self.assertEqual(code,200,opened)
+                self.assertEqual(opened['ledger']['character']['interruptionCorrection'],
+                                 record['ledger']['character']['interruptionCorrection'])
                 self.assertEqual(opened['result']['interruptionCorrection']['version'],VERSION)
                 code, restored = handler('POST', '/api/restore', opened)
                 self.assertEqual(code,200,restored)

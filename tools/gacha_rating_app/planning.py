@@ -331,6 +331,10 @@ def score_planning(character: dict) -> dict:
         previous = pools[i-1] if i else None
         if pool.get('interruptionBefore') or (previous is not None and not _next_is_contiguous(previous, pool) and not character.get('completeHistory')):
             ownership_known = False
+        if pool.get('interruptionBefore'):
+            catalog = pool.get('interruptionCatalog') or {}
+            owned.update(catalog.get('ownedSixStars', []))
+            ownership_known = catalog.get('catalogComplete') is True
         held = pool.get('up') in owned if ownership_known or pool.get('up') in owned else None
         # Validate the original resource ledger first. New uncertainty is an A-only
         # ambiguity, not a source conflict, and must not suppress a valid B quote.

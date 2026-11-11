@@ -25,14 +25,24 @@
     const free=Object.hasOwn(value,'freeAllowances')?value.freeAllowances:{};
     if(typeof free!=='object'||free===null||Array.isArray(free)||Object.entries(free).some(([key,n])=>
        !/^(0|[1-9]\d*)$/.test(key)||!integer(Number(key),0,BANNERS.length-1)||![0,10,20].includes(n)))return '中断后的免费额度须选择0、10或20抽。';
+    const resume=Object.hasOwn(value,'resumeInfo')?value.resumeInfo:{},known=new Set([...LIMITED,...COMMON]);
+    if(!resume||typeof resume!=='object'||Array.isArray(resume)||Object.entries(resume).some(([key,info])=>
+       !/^(0|[1-9]\d*)$/.test(key)||!integer(Number(key),0,BANNERS.length-1)||!info||typeof info!=='object'||Array.isArray(info)))return '中断补充信息须对应有效卡池。';
+    for(const info of Object.values(resume)){
+      const names=Object.hasOwn(info,'ownedSixStars')?info.ownedSixStars:[];
+      if(!Array.isArray(names)||names.length>known.size||names.some(n=>!known.has(nameOf(n)))||
+         new Set(names.map(nameOf)).size!==names.length)return '补充图鉴须为不重复的已支持六星角色。';
+      if(Object.hasOwn(info,'catalogComplete')&&typeof info.catalogComplete!=='boolean')return '图鉴补全确认须为选中或未选中。';
+      if(!integer(Object.hasOwn(info,'initialPity')?info.initialPity:0,0,79))return '中断后补充水位须为0—79的整数。';
+    }
     return '';
   }
 
-  function projectCharacter(record) {
+  function projectCharacter(record,{forPlanning=false}={}) {
     const character=JSON.parse(JSON.stringify(record||{pools:[]}));
     const problem=validateInterruption(character);if(problem)throw new Error(problem);
     const selected=[...(character.interruptionCorrection?.excludedIndices||[])].sort((a,b)=>a-b);
-    const summary={enabled:selected.length>0,version:'history-interruption-v1-20261030',excludedIndices:selected,
+    const summary={enabled:selected.length>0,version:'history-interruption-v2-catalog-pity-20261111',excludedIndices:selected,
       excludedBanners:selected.map(i=>BANNERS[i]),excludedPoolIds:[],excludedMainDraws:0,resetPools:[]};
     if(!selected.length)return {character,summary};
     const originals=orderedPools(character),removed=(character.pools||[]).filter(p=>selected.includes(p.index));
@@ -46,10 +56,13 @@
     for(const pool of character.pools){
       const original=JSON.parse(JSON.stringify(pool)),boundary=selected.some(i=>i>(previousOriginal?.index??-1)&&i<pool.index);
       if(boundary){
-        pool.interruptionBefore=true;pool.initialPity=0;
+        const info=character.interruptionCorrection.resumeInfo?.[pool.index]??{};
+        pool.interruptionBefore=true;pool.initialPity=forPlanning?0:info.initialPity??0;
+        pool.interruptionCatalog={ownedSixStars:(info.ownedSixStars??[]).map(nameOf),catalogComplete:info.catalogComplete??false};
         pool.freeAllowance=character.interruptionCorrection.freeAllowances?.[pool.index]??10;
         delete pool.freeDrawPositions;
-        summary.resetPools.push({id:pool.id,index:pool.index,banner:pool.banner,initialPity:0,freeAllowance:pool.freeAllowance});
+        summary.resetPools.push({id:pool.id,index:pool.index,banner:pool.banner,initialPity:pool.initialPity,
+          planningInitialPity:0,freeAllowance:pool.freeAllowance,...pool.interruptionCatalog});
       }else if(previousOriginal&&pool.index===previousOriginal.index+1&&
                previousEffective.tail!==previousOriginal.tail&&
                (original.initialPity==null||original.initialPity===previousOriginal.tail)&&integer(previousEffective.tail,0,79)){

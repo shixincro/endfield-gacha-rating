@@ -100,7 +100,28 @@ test('a corrected boundary cannot suppress a truly impossible segment or an iden
   const bad=record([pool(0,30),pool(1,70,[[70]],{interruptionBefore:true,
     issues:[{code:'source_conflict',severity:'error',axes:['characterSix','up','limited'],message:'source conflict'}]})]);
   for(const key of axes.slice(0,3))assert.equal(scoreCharacter(bad).axes[key].status,'unscored');
-  const nonzero=record([pool(0,30),pool(1,20,[[20]],{interruptionBefore:true,initialPity:5})]);
-  assert.equal(scoreCharacter(nonzero).axes.up.status,'unscored');
-  assert.throws(()=>up.split(nonzero),/期初水位必须为0/);
+  const invalid=record([pool(0,30),pool(1,20,[[20]],{interruptionBefore:true,initialPity:80})]);
+  assert.equal(scoreCharacter(invalid).axes.up.status,'unscored');
+  assert.throws(()=>up.split(invalid),/期初水位/);
+});
+
+test('supplemental boundary pity conditions the same observed hits without adding draws',()=>{
+  const input=record([pool(0,30),pool(1,20,[[20]],{interruptionBefore:true,initialPity:55})]);
+  const output=scoreCharacter(input);checkScored(output);
+  assert.equal(output.counts.main,50);assert.equal(output.counts.six,1);
+  assert.equal(output.axes.up.details.completed[0].initialPity,55);
+  assert.deepEqual(countSegments(input).segments,[{initialPity:0,mainDraws:30,mainSix:0},{initialPity:55,mainDraws:20,mainSix:1}]);
+});
+
+test('supplemental collection changes only New ownership, retaining earlier observed ownership',()=>{
+  const input=record([pool(0,10,[[10,'伊冯']]),pool(1,10,[[10,'莱万汀']],{
+    interruptionBefore:true,interruptionCatalog:{ownedSixStars:['莱万汀'],catalogComplete:true}}),
+    pool(2,10,[[10,'洁尔佩塔']])]);
+  const withInfo=scoreCharacter(input);checkScored(withInfo);
+  const without=structuredClone(input);delete without.pools[1].interruptionCatalog;
+  const old=scoreCharacter(without);
+  assert.deepEqual(withInfo.axes.limited.details.identities.map(x=>x.weight),[2,1,2]);
+  for(const key of ['characterSix','up'])assert.deepEqual(withInfo.axes[key],old.axes[key]);
+  assert.equal(withInfo.axes.five.score,old.axes.five.score);
+  for(const key of ['main','total','six','up','quota'])assert.equal(withInfo.counts[key],old.counts[key]);
 });

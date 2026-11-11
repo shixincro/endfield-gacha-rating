@@ -2632,6 +2632,28 @@ async function main() {
     h.flushTimers();await tick();const score=h.pending.find(p=>p.url==='/api/score');assert(score);
     assert.equal(score.body.session.ledger.character.pools[1].initialPity,30);
   });
+  await test('interruption catalog and pity save independently, survive toggles, and preserve observed hits',async()=>{
+    const h=await loaded(),value=interruptedRecord();
+    value.ledger.character.pools[1].events[0].at=50;
+    value.ledger.character.pools[1].tail=20;
+    h.ctx.loadSession(value);h.nodes.openResults.click();toggleInterruption(h,1);
+    setField(h.nodes.interruptionReview,'热烈色彩起始水位（仅欧非）',15);
+    const owned=h.nodes.interruptionReview.querySelectorAll('input').find(n=>n.dataset.character==='莱万汀');
+    owned.checked=true;owned.onchange();
+    const complete=h.nodes.interruptionReview.querySelectorAll('input').find(n=>n.dataset.catalogIndex==='2');
+    complete.checked=true;complete.onchange();
+    assert.equal(h.read('effectiveCharacter(characterDraft).pools[1].initialPity'),15);
+    assert.equal(h.read('characterDraft.pools[1].initialPity'),30);
+    toggleInterruption(h,1,false);toggleInterruption(h,1,true);
+    assert.equal(Number(findField(h.nodes.interruptionReview,'热烈色彩起始水位（仅欧非）').value),15);
+    assert.equal(h.nodes.interruptionReview.querySelectorAll('input').find(n=>n.dataset.character==='莱万汀').checked,true);
+    h.nodes.resultsApply.click();assert.equal(h.nodes.resultsDialog.open,false);
+    assert.deepEqual(h.state().ledger.character.interruptionCorrection.resumeInfo,{
+      2:{initialPity:15,ownedSixStars:['莱万汀'],catalogComplete:true}});
+    assert.deepEqual(h.state().ledger.character.pools,value.ledger.character.pools);
+    h.nodes.openResults.click();assert.equal(h.nodes.interruptionReview.querySelectorAll('input').find(n=>n.dataset.catalogIndex==='2').checked,true);
+    h.nodes.resultsCancel.click();
+  });
   await test('excluded malformed pool leaves review queue and can be restored by clearing the option',async()=>{
     const h=await loaded(),value=record('excluded-invalid',[pool(),pool({id:'bad',index:1,banner:'轻飘飘的信使',up:'洁尔佩塔',total:null,initialPity:10,events:[{at:null,character:null}],issues:[{severity:'error',message:'记录已丢失'}]})]);
     h.ctx.loadSession(value);h.nodes.openResults.click();toggleInterruption(h,1);h.nodes.resultsApply.click();

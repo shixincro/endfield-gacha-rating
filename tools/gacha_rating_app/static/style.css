@@ -165,7 +165,9 @@ button.danger{color:#a63c32;border-color:#d1a099}button.danger:hover{background:
 .interruption-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:16px 0}
 .interruption-grid .check{align-items:flex-start;line-height:1.6}
 .interruption-grid input{margin-top:5px;flex-shrink:0}
-.interruption-resume{display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.interruption-resume{display:flex;align-items:stretch;flex-direction:column;gap:12px;padding:16px 0;border-top:1px solid var(--line)}
+.interruption-resume-fields{display:flex;flex-wrap:wrap;gap:12px 24px}.interruption-resume-fields .field{flex:1;min-width:180px}
+.interruption-catalog{padding:12px;border:1px solid var(--line);border-radius:6px;background:#fff}.interruption-catalog>summary{cursor:pointer}.interruption-resume p{margin:0;line-height:1.6}.interruption-catalog p{margin-top:12px}
 .interruption-pool-note,.interruption-notice{padding:10px 14px;background:#edf4ec;border-left:3px solid #56856c;color:#315b46;font-size:13px;line-height:1.6}
 .pool.is-excluded{background:#f4f4f1}.pool.is-excluded>summary strong{color:var(--muted)}
 .queue-review #interruptionReview{grid-column:1/-1}

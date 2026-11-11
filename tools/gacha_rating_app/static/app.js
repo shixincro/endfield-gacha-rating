@@ -61,7 +61,6 @@ function showNotice(id,message,running=false){
 function error(message){showNotice('error',message);}
 function status(message,running=false){showNotice('status',message,running);}
 async function api(path,body){
-  if(window.BrowserRating)return window.BrowserRating.api(path,body);
   const response=await fetch(path,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json','X-App-Token':token},body:JSON.stringify(body)});
   const value=await response.json();
   if(!response.ok){const failure=Error(value.error||'请求失败');if(typeof value.code==='string')failure.code=value.code;throw failure;}
@@ -376,8 +375,7 @@ function cancelResults(){
   status('');
 }
 function renderSourceEvidence(target,docs){
-  for(const d of docs){let src=d.sourceImage;if(typeof src!=='string'||!src.startsWith('/data/'))continue;
-    if(window.BrowserRating){src=window.BrowserRating.evidenceURL(src);if(!src)continue;}
+  for(const d of docs){const src=d.sourceImage;if(typeof src!=='string'||!src.startsWith('/data/'))continue;
     const figure=el('figure',undefined,'pool-evidence'),a=el('a'),img=el('img');a.href=src;a.target='_blank';a.rel='noopener';img.src=src;img.alt=d.file||'识别原图';img.loading='lazy';a.append(img);figure.append(a,el('figcaption',d.file||'识别原图'));target.append(figure);
   }
 }
@@ -440,7 +438,7 @@ function renderInitialHistory(){
   const target=$('initialHistory');target.replaceChildren();
   const first=firstPool(characterDraft);if(!first){target.append(el('p','暂无角色卡池。','empty'));return;}
   const effectiveFirst=firstPool(effectiveCharacter(characterDraft));
-  if(effectiveFirst?.interruptionBefore){target.append(el('p','当前评分从'+effectiveFirst.banner+'的0水位重新开始，原首池信息继续保留。','muted small'));return;}
+  if(effectiveFirst?.interruptionBefore){target.append(el('p','当前欧非评分从'+effectiveFirst.banner+'的'+effectiveFirst.initialPity+'水位重新开始，可在中断修正中补充。','muted small'));return;}
   const details=el('div',undefined,'initial-history');
   details.append(el('h3',first.banner));
   const history=characterDraft.firstPoolHistory;
@@ -494,13 +492,13 @@ function renderInterruptionReview(){
   const target=$('interruptionReview');target.replaceChildren();
   const chosen=characterDraft.interruptionCorrection?.excludedIndices||[],selected=new Set(chosen);
   const details=el('div',undefined,'interruption-review');
-  details.append(el('p','勾选要排除的卡池。下一段从0水位开始，取消勾选即可恢复。','muted small'));
+  details.append(el('p','勾选要排除的卡池，在下一段补充图鉴与水位。取消勾选即可恢复原记录。','muted small'));
   const grid=el('div',undefined,'interruption-grid');
   edit.BANNERS.forEach((banner,index)=>{
     const label=el('label',undefined,'check'),input=el('input');input.type='checkbox';input.checked=selected.has(index);input.dataset.bannerIndex=String(index);
     input.onchange=()=>{
       const values=new Set(characterDraft.interruptionCorrection?.excludedIndices||[]);input.checked?values.add(index):values.delete(index);
-      characterDraft.interruptionCorrection={excludedIndices:[...values].sort((a,b)=>a-b),freeAllowances:{...(characterDraft.interruptionCorrection?.freeAllowances||{})}};
+      characterDraft.interruptionCorrection={...characterDraft.interruptionCorrection,excludedIndices:[...values].sort((a,b)=>a-b),freeAllowances:{...(characterDraft.interruptionCorrection?.freeAllowances||{})}};
       renderCharacterReview();draftChanged();
     };
     const present=characterDraft.pools.some(p=>p.index===index);
@@ -509,10 +507,31 @@ function renderInterruptionReview(){
   if(!edit.validateInterruption(characterDraft)){
     const {summary}=edit.projectCharacter(characterDraft);
     for(const pool of summary.resetPools){
-      const row=el('div',undefined,'interruption-resume');row.append(el('strong',pool.banner+' · 从0水位重新开始'));
+      const row=el('div',undefined,'interruption-resume');row.append(el('strong',pool.banner+' · 恢复记录'));
+      const getInfo=()=>{
+        const resume=characterDraft.interruptionCorrection.resumeInfo??={};
+        return resume[pool.index]??={ownedSixStars:[],catalogComplete:false,initialPity:0};
+      };
+      const meta=el('div',undefined,'interruption-resume-fields');
       const free=el('label',undefined,'field');free.append(el('span',pool.banner+'免费抽'),select(pool.freeAllowance,[['0','0抽'],['10','10抽'],['20','20抽']],v=>{
         (characterDraft.interruptionCorrection.freeAllowances??={})[pool.index]=Number(v);renderCharacterReview();
-      }));row.append(free);details.append(row);
+      }));
+      const pity=field(pool.banner+'起始水位（仅欧非）',pool.initialPity,v=>{
+        getInfo().initialPity=v??0;refreshPoolWaterViews();renderInitialHistory();
+      });pity.querySelector('input').max=79;
+      meta.append(free,pity);row.append(meta);
+      const collection=el('details',undefined,'interruption-catalog');
+      collection.append(el('summary','补充六星图鉴（仅图鉴）'),el('p','已有出货会自动保留，勾选缺少的已拥有六星；不会增加抽数或出货数。','muted small'));
+      const ownedGrid=el('div',undefined,'owned-grid');
+      for(const name of characters){
+        const label=el('label',undefined,'check'),input=el('input');input.type='checkbox';input.checked=pool.ownedSixStars.includes(name);input.dataset.resumeIndex=String(pool.index);input.dataset.character=name;
+        input.onchange=()=>{const info=getInfo(),owned=new Set(info.ownedSixStars);input.checked?owned.add(name):owned.delete(name);info.ownedSixStars=characters.filter(n=>owned.has(n));draftChanged();};
+        label.append(input,el('span',name));ownedGrid.append(label);
+      }
+      const complete=el('label',undefined,'check'),confirmed=el('input');confirmed.type='checkbox';confirmed.checked=pool.catalogComplete;confirmed.dataset.catalogIndex=String(pool.index);
+      confirmed.onchange=()=>{getInfo().catalogComplete=confirmed.checked;draftChanged();};
+      complete.append(confirmed,el('span','此处六星图鉴已补全'));
+      collection.append(ownedGrid,complete);row.append(collection,el('p','未填水位按0处理。补充水位只影响欧非，亏损估值仍按0水位重置。','muted small'));details.append(row);
     }
     if(selected.size&&!summary.resetPools.length)details.append(el('p','已排除所选卡池；当前没有其后的保留记录。','muted small'));
     const invalidHypothesis=interruptedHypothesisReason(characterDraft);
@@ -889,8 +908,7 @@ function renderCharacterReview(focusEvent=null,focusPoolId=null){
       if(type==='主池')pos.append(field('累计抽数',event.at,v=>{event.at=v;updatePoolWater(p);}));else pos.textContent='独立十连';row.append(pos);
       const char=el('td');char.append(select(event.character,[['','未识别'],...characters.map(n=>[n,n])],v=>{event.character=v||null;event.identitySource='manual';}));row.append(char);
       const evidence=el('td'),ev=event.evidence,crop=event.crop||ev?.crop||ev?.avatarCrop;
-      const cropURL=window.BrowserRating?window.BrowserRating.evidenceURL(crop):crop;
-      if(crop?.startsWith('/data/')&&cropURL){const a=el('a');a.href=cropURL;a.target='_blank';a.rel='noopener';const img=el('img');img.src=cropURL;img.alt='原图头像';a.append(img);evidence.append(a);}
+      if(crop?.startsWith('/data/')){const a=el('a');a.href=crop;a.target='_blank';a.rel='noopener';const img=el('img');img.src=crop;img.alt='原图头像';a.append(img);evidence.append(a);}
       row.append(evidence);
       const actions=el('td');actions.append(button('移除行',()=>{(type==='主池'?p.events:p.rush).splice(index,1);if(type==='主池')updatePoolWater(p);renderCharacterReview();}));row.append(actions);table.append(row);
       if(event===focusEvent){block.open=true;focusInput=pos.querySelector('input')||char.querySelector('select');}
@@ -1217,7 +1235,7 @@ function renderPlanningRecord(target,p){
 }
 function renderPlanningEvidence(target,p,row){
   const evidence=el('div'),src=poolSource(p);target.append(evidence);
-  if(typeof src==='string'&&src.startsWith('/data/')&&(!window.BrowserRating||window.BrowserRating.evidenceURL(src))){
+  if(typeof src==='string'&&src.startsWith('/data/')){
     renderSourceEvidence(evidence,[{sourceImage:src,file:(row.banner||row.id)+' · 记录图'}]);
     const img=evidence.querySelector('img');
     if(img)img.onerror=()=>{evidence.replaceChildren();renderPlanningRecord(evidence,p);};
@@ -1507,4 +1525,4 @@ async function refreshHistory(){
     historyRows=rows.filter(row=>!deletedRecordIds.has(row.id));const available=new Set(historyRows.map(row=>row.id));historySelected=new Set([...historySelected].filter(id=>available.has(id)));renderHistory();return true;
   }catch(e){if(request===historyRequestId){$('historyDeleteFeedback').hidden=false;$('historyDeleteFeedback').textContent='读取历史失败：'+displayText(e.message);updateHistoryControls();}return false;}
 }
-(async()=>{try{const config=await api('/api/config');token=config.token;planningVersion=typeof config.planningVersion==='string'?config.planningVersion:'';characterVersion=typeof config.characterVersion==='string'?config.characterVersion:'';weaponVersion=typeof config.weaponVersion==='string'?config.weaponVersion:'';recognitionVersion=typeof config.recognitionVersion==='string'?config.recognitionVersion:'';scoringScenarioVersion=typeof config.scoringScenarioVersion==='string'?config.scoringScenarioVersion:'';interruptionVersion=typeof config.interruptionVersion==='string'?config.interruptionVersion:'';await refreshHistory();}catch(e){error((window.BrowserRating?'浏览器计算环境未就绪：':'本地服务未连接：')+e.message);}})();
+(async()=>{try{const config=await api('/api/config');token=config.token;planningVersion=typeof config.planningVersion==='string'?config.planningVersion:'';characterVersion=typeof config.characterVersion==='string'?config.characterVersion:'';weaponVersion=typeof config.weaponVersion==='string'?config.weaponVersion:'';recognitionVersion=typeof config.recognitionVersion==='string'?config.recognitionVersion:'';scoringScenarioVersion=typeof config.scoringScenarioVersion==='string'?config.scoringScenarioVersion:'';interruptionVersion=typeof config.interruptionVersion==='string'?config.interruptionVersion:'';await refreshHistory();}catch(e){error('本地服务未连接：'+e.message);}})();

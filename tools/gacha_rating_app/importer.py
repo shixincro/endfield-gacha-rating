@@ -27,8 +27,9 @@ BANNERS = {
 }
 CHAR_AXES = ["characterSix", "up", "limited", "five"]
 WEAPON_AXES = ["weaponSix", "signature"]
-RECOGNITION_VERSION = 'card-boundary-review-v7-pity-source-20261109'
-DERIVED_REVIEW_VERSIONS = {RECOGNITION_VERSION, 'card-boundary-review-v6-minghe-20261105',
+RECOGNITION_VERSION = 'card-boundary-review-v8-empty-placeholder-20261111'
+DERIVED_REVIEW_VERSIONS = {RECOGNITION_VERSION, 'card-boundary-review-v7-pity-source-20261109',
+                           'card-boundary-review-v6-minghe-20261105',
                            'card-boundary-review-v5-20261024', 'live-ledger-validation-v4-20261024',
                            'avatar-review-migration-v3-20261023'}
 
@@ -1084,10 +1085,11 @@ def revalidate_current_ledger(documents, ledger, *, reviewed=False):
         current = pool.get('issues', [])
         remaining = _remaining_evidence_issues(current, (raw or {}).get('issues', []),
                                               CURRENT_POOL_CODES | EVENT_REVIEW_CODES)
-        # This specific legacy placeholder was cleared only by the existing
-        # explicit per-pool save confirmation, never by typing a numeric field.
+        # Explicit per-pool confirmation also applies to empty hit lists: a
+        # no-six-star pool has no character rows to confirm individually.
+        # Numeric edits or a global reviewed flag must not clear this evidence.
         rows = pool.get('events', []) + pool.get('rush', [])
-        confirmed = (pool.get('eventReviewConfirmed') is True and bool(rows)
+        confirmed = (pool.get('eventReviewConfirmed') is True
                      and all(e.get('identityReviewed') is True for e in rows)
                      and not any(i.get('code') in EVENT_REVIEW_CODES for i in current))
         if confirmed:

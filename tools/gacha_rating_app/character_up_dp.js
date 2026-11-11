@@ -62,7 +62,7 @@ function split(record) {
       if(actualPity!==null)equal(pool.initialPity,actualPity,'卡池期初水位与前池结尾不一致');
       else {actualPity=pool.initialPity;current=makeCycle(actualPity);unknownStreak=0;}
     }
-    if(pool.interruptionBefore===true)equal(pool.initialPity,0,'中断修正后的期初水位必须为0');
+    if(pool.interruptionBefore===true)check(knownPity(pool.initialPity),'中断修正后的期初水位须为0—79');
     if(current&&pool.total>0) {
       const deadline=current.actual+120,entry={at:current.actual,deadline,pool:id};
       if(current.schedule.at(-1)?.at===entry.at)current.schedule[current.schedule.length-1]=entry;

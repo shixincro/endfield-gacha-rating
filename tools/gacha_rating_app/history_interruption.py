@@ -4,13 +4,14 @@ from __future__ import annotations
 import copy
 from importer import BANNERS as BANNER_UPS
 
-VERSION = 'history-interruption-v1-20261030'
+VERSION = 'history-interruption-v2-catalog-pity-20261111'
 BANNERS = tuple(BANNER_UPS)
+SIX_STARS = {*BANNER_UPS.values(), '骏卫', '黎风', '别礼', '余烬', '艾尔黛拉'}
 
 
 def normalize_correction(value):
     if value is None:
-        return {'excludedIndices': [], 'freeAllowances': {}}
+        return {'excludedIndices': [], 'freeAllowances': {}, 'resumeInfo': {}}
     if not isinstance(value, dict):
         raise ValueError('中断修正设置须为对象。')
     indices, allowances = value.get('excludedIndices'), value.get('freeAllowances', {})
@@ -23,18 +24,40 @@ def normalize_correction(value):
                    or type(amount) is not int or amount not in (0, 10, 20)
                    for key, amount in allowances.items())):
         raise ValueError('中断后免费额度须为0、10或20抽。')
-    return {'excludedIndices': sorted(indices), 'freeAllowances': dict(allowances)}
+    resume = value.get('resumeInfo', {})
+    keys = {str(i) for i in range(len(BANNERS))}
+    if not isinstance(resume, dict) or len(resume) > len(BANNERS) or any(key not in keys for key in resume):
+        raise ValueError('中断补充信息须对应有效卡池。')
+    normalized = {}
+    for key, info in resume.items():
+        if not isinstance(info, dict):
+            raise ValueError('中断补充信息须为对象。')
+        names = info.get('ownedSixStars', [])
+        if (not isinstance(names, list) or len(names) > len(SIX_STARS)
+                or any(not isinstance(name, str) or ('骏卫' if name == '俊卫' else name) not in SIX_STARS for name in names)):
+            raise ValueError('补充图鉴须为已支持的六星角色列表。')
+        names = ['骏卫' if name == '俊卫' else name for name in names]
+        if len(set(names)) != len(names):
+            raise ValueError('补充图鉴中的六星角色不能重复。')
+        complete, pity = info.get('catalogComplete', False), info.get('initialPity', 0)
+        if type(complete) is not bool:
+            raise ValueError('图鉴补全确认须为选中或未选中。')
+        if type(pity) is not int or not 0 <= pity <= 79:
+            raise ValueError('中断后补充水位须为0—79的整数。')
+        normalized[key] = {'ownedSixStars': names, 'catalogComplete': complete, 'initialPity': pity}
+    return {'excludedIndices': sorted(indices), 'freeAllowances': dict(allowances), 'resumeInfo': normalized}
 
 
 def _integer(value, low=0, high=10000):
     return type(value) is int and low <= value <= high
 
 
-def project_character(character):
+def project_character(character, *, for_planning=False):
     """Return a new effective character and a small public scope summary.
 
-    Only a declared boundary establishes zero pity. Subsequent water follows
-    previously consistent links; an unrelated manual conflict stays an error.
+    Missing ownership seeds the collection only, never observed hits. Supplied
+    pity affects luck only; planning retains the zero-pity reset convention.
+    Subsequent water follows previously consistent links, not unrelated errors.
     """
     original = character or {'pools': []}
     result = copy.deepcopy(original)
@@ -63,14 +86,18 @@ def project_character(character):
         previous_index = previous['index'] if previous is not None else -1
         boundary = any(previous_index < index < pool['index'] for index in selected)
         if boundary:
+            info = config['resumeInfo'].get(str(pool['index']), {})
             pool['interruptionBefore'] = True
-            pool['initialPity'] = 0
+            pool['initialPity'] = 0 if for_planning else info.get('initialPity', 0)
+            pool['interruptionCatalog'] = {'ownedSixStars': list(info.get('ownedSixStars', [])),
+                                           'catalogComplete': info.get('catalogComplete', False)}
             pool['freeAllowance'] = config['freeAllowances'].get(str(pool['index']), 10)
             # Attribution described the original allowance and cannot override
             # the newly selected resource convention in the scoring view.
             pool.pop('freeDrawPositions', None)
             summary['resetPools'].append({key: pool.get(key) for key in ('id', 'index', 'banner')}
-                                        | {'initialPity': 0, 'freeAllowance': pool['freeAllowance']})
+                                        | {'initialPity': pool['initialPity'], 'planningInitialPity': 0,
+                                           'freeAllowance': pool['freeAllowance'], **pool['interruptionCatalog']})
         elif (previous is not None and pool['index'] == previous['index'] + 1
               and previous.get('tail') != previous_raw.get('tail')
               and (raw.get('initialPity') is None or raw.get('initialPity') == previous_raw.get('tail'))
@@ -100,9 +127,9 @@ def project_character(character):
     return result, summary
 
 
-def project_ledger(ledger):
+def project_ledger(ledger, *, for_planning=False):
     result = copy.deepcopy(ledger)
-    result['character'], summary = project_character(ledger.get('character'))
+    result['character'], summary = project_character(ledger.get('character'), for_planning=for_planning)
     return result, summary
 
 
