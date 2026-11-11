@@ -8,9 +8,10 @@
 
 ## 在线体验
 
-[打开临时在线版](https://endfield-gacha-rating.aqargwbmncht.chatgpt.site/)
+- [Cloudflare 临时在线版](https://endfield-gacha-rating.endfield-gacha-rating-cloudflare.workers.dev/)
+- [ChatGPT Sites 临时在线版](https://endfield-gacha-rating.aqargwbmncht.chatgpt.site/)
 
-此临时网址由 ChatGPT Sites 托管，使用 `chatgpt.site` 域名。网页顶部的“GitHub 开源”链接指向本仓库，可用于核对项目来源。
+两个临时站点分别由 Cloudflare 和 ChatGPT Sites 托管，使用 `workers.dev` 和 `chatgpt.site` 域名。网页顶部的“GitHub 开源”链接指向本仓库，可用于核对项目来源。
 
 识图与评分均在访问者浏览器内完成，记录保存在该浏览器本地。可导出记录 JSON 备份，清除网站数据会删除该浏览器保存的记录。
 
