@@ -2,7 +2,7 @@
 
 本版已把评分、TXT/JSON 导入、截图识别和记录保存接到浏览器本地。网站只提供 HTML、代码、模型和运行库；导入的图片、抽卡文件和计算请求不会发送到服务器。访问者不需要安装 Python、Node.js 或开发环境。
 
-当前是可运行、已在 Windows Edge 上验证的迁移版本，尚未发布公网地址或替换 Windows v0.1.0 下载包。手机硬件、Safari、Firefox 和低内存设备尚未完成实机验收。
+临时在线版已发布到 ChatGPT Sites，使用 `chatgpt.site` 域名。已在 Windows Edge 上验证，手机硬件、Safari、Firefox 和低内存设备尚未完成实机验收。[打开临时在线版](https://endfield-gacha-rating.aqargwbmncht.chatgpt.site/)
 
 ## 实现方式
 

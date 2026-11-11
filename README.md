@@ -2,9 +2,17 @@
 
 在本机识别小黑盒抽卡截图，核对记录，并计算六维欧非与规划亏损。网页、识图和评分均在本机运行。
 
-新增浏览器本地计算版本：静态网站即可承载，访问者无需安装 Python 或 Node.js。当前为本地验证版本，尚未发布在线地址；构建方式和验证范围见 [浏览器版说明](docs/BROWSER.md)。
+浏览器本地计算版本已提供在线体验，访问者无需安装 Python 或 Node.js。构建方式和验证范围见 [浏览器版说明](docs/BROWSER.md)。
 
 维护者：[shixincro](https://github.com/shixincro)。原创代码使用 [MIT 许可证](LICENSE)。游戏素材与第三方依赖遵循各自的许可，见 [第三方说明](THIRD_PARTY_NOTICES.md)。
+
+## 在线体验
+
+[打开临时在线版](https://endfield-gacha-rating.aqargwbmncht.chatgpt.site/)
+
+此临时网址由 ChatGPT Sites 托管，使用 `chatgpt.site` 域名。网页顶部的“GitHub 开源”链接指向本仓库，可用于核对项目来源。
+
+识图与评分均在访问者浏览器内完成，记录保存在该浏览器本地。可导出记录 JSON 备份，清除网站数据会删除该浏览器保存的记录。
 
 ## 功能
 

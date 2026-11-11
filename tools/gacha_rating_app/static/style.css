@@ -207,3 +207,20 @@ button.danger{color:#a63c32;border-color:#d1a099}button.danger:hover{background:
 .empty-rush[aria-pressed=true]{border-color:var(--green);color:var(--green);background:#eaf2e2}
 
 .brand-heading{margin:0;line-height:1;letter-spacing:normal}
+.top {
+  height: auto;
+  min-height: 75px;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  padding-block: 14px;
+}
+.top-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.source-link {
+  font-size: 13px;
+  white-space: nowrap;
+}
