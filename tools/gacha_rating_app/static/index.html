@@ -18,14 +18,19 @@
     <button id="openResults" type="button" aria-haspopup="dialog" aria-controls="resultsDialog">限定池识别结果</button>
     <button id="weaponConfigured" class="weapon-config-button" type="button" aria-haspopup="dialog" aria-controls="resultsDialog" aria-pressed="false" disabled>武器修正</button>
     <button id="manualSupplement" type="button" aria-haspopup="dialog" aria-controls="manualSupplementDialog" disabled>手动补充记录</button>
-    <button id="exportRadar" type="button" disabled>保存结果</button>
+    <button id="setResultNickname" type="button" aria-haspopup="dialog" aria-controls="resultNicknameDialog" disabled>设置昵称</button>
+    <button id="exportRadar" type="button" disabled>复制图片</button>
+    <button id="downloadResultImage" type="button" disabled>保存图片</button>
     <button id="save" type="button">保存记录JSON</button>
   </div>
 </div>
 <p id="interruptionNotice" class="interruption-notice" role="status" hidden></p>
 <div class="result-grid" id="resultCapture">
   <section class="panel planning-score-panel">
-    <div class="section-head result-panel-heading"><h2>规划亏损</h2><p id="planningTitle" class="rating-title" hidden></p></div>
+    <div class="section-head result-panel-heading">
+      <div class="planning-heading-label"><h2>规划亏损</h2><button id="openPlanningInfo" class="planning-info-button" type="button" aria-label="规划亏损说明" aria-haspopup="dialog" aria-controls="planningInfoDialog">ⓘ</button></div>
+      <p id="planningTitle" class="rating-title" hidden></p>
+    </div>
     <div id="planningHighlights" class="planning-highlights" aria-live="polite"></div>
     <div id="planningBreakdown" class="planning-breakdown" hidden>
       <div id="planningRankHeader" class="planning-rank-header"><h3>卡池亏损</h3><button id="openAllPlanning" class="view-all-planning" type="button" aria-haspopup="dialog" aria-controls="planningAllDialog">查看全部</button></div>
@@ -39,6 +44,17 @@
     <div id="radar" hidden></div>
   </section>
 </div>
+<dialog id="resultNicknameDialog" class="review-dialog result-nickname-dialog" aria-labelledby="resultNicknameTitle">
+  <form id="resultNicknameForm">
+    <div class="dialog-header"><h2 id="resultNicknameTitle">设置昵称</h2></div>
+    <div class="dialog-scroll">
+      <label class="field" for="resultNickname">昵称</label>
+      <input id="resultNickname" type="text" autocomplete="off" aria-describedby="resultNicknameHint" autofocus>
+      <p id="resultNicknameHint" class="muted small">昵称仅保存在当前浏览器，用于结果图片水印。留空可清除。</p>
+    </div>
+    <div class="dialog-footer"><div class="actions"><button type="button" data-close-dialog="resultNicknameDialog">取消</button><button type="submit" class="primary">保存昵称</button></div></div>
+  </form>
+</dialog>
 <dialog id="resultsDialog" class="review-dialog results-dialog" aria-labelledby="resultsDialogTitle">
   <div class="dialog-header">
     <h2 id="resultsDialogTitle">限定池识别结果</h2>
@@ -87,6 +103,15 @@
     <div id="hypothesisComparison" aria-live="polite"></div>
   </div>
   <div class="dialog-footer"><p class="muted small">取消勾选可恢复实际评分。</p><div class="actions"><button type="button" data-close-dialog="hypothesisDialog">关闭</button><button id="hypothesisPreview" type="button" disabled>先预览评分变化</button></div></div>
+</dialog>
+<dialog id="planningInfoDialog" class="review-dialog planning-info-dialog" aria-labelledby="planningInfoTitle">
+  <div class="dialog-header"><h2 id="planningInfoTitle">规划亏损说明</h2></div>
+  <div class="dialog-scroll">
+    <p><strong>期望亏损：</strong>和建议的规划相比，当前规划理论上平均会多花多少抽。</p>
+    <p><strong>实际亏损：</strong>根据实际出货结果，算当前规划比建议的规划多花或节省了多少抽。</p>
+    <p><strong>机会亏损：</strong>停手时，如果继续抽这个池拿一个 UP 更划算，就记下原本预计能省的抽数。</p>
+  </div>
+  <div class="dialog-footer"><div class="actions"><button type="button" data-close-dialog="planningInfoDialog">关闭</button></div></div>
 </dialog>
 <dialog id="planningDetailDialog" class="review-dialog planning-detail-dialog" aria-labelledby="planningDetailTitle">
   <div class="dialog-header"><h2 id="planningDetailTitle">卡池亏损详情</h2><div id="planningExemption" class="planning-exemption"></div></div>

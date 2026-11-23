@@ -13,11 +13,14 @@ let hypothesis=null,hypothesisEpoch=0;
 let planningSettingRequest=null,planningDetailPoolId=null,planningSettingError=null;
 let scoringScenarioRequest=null;
 let resultCaptureBusy=false;
+const resultNicknameKey='endfield.resultNickname';
+let resultNickname='';
+try{resultNickname=window.localStorage?.getItem(resultNicknameKey)?.trim()||'';}catch{}
 const scoreSettingPending=()=>!!planningSettingRequest||!!scoringScenarioRequest;
 let draftValidationTimer=null,draftValidationEpoch=0,draftValidationRequest=0,draftValidationLedger=null,draftValidationState='idle',draftValidationMessage='',draftFingerprint='',draftOpeningSignature='';
 const characterPoolViews=new Map();
 let weaponIssueView=null,queueIssueView=null;
-const viewDialogs=['planningDetailDialog','planningAllDialog','historyDialog','hypothesisDialog','manualSupplementDialog','recordFormatDialog'];
+const viewDialogs=['planningDetailDialog','planningAllDialog','planningInfoDialog','historyDialog','hypothesisDialog','manualSupplementDialog','recordFormatDialog','resultNicknameDialog'];
 const clone=value=>JSON.parse(JSON.stringify(value));
 const effectiveCharacter=value=>edit.validateInterruption(value)?value:edit.projectCharacter(value).character;
 const hasWeaponProfile=w=>ui.hasWeaponProfile(w);
@@ -197,7 +200,7 @@ function markStale(message='记录已修改，等待重算…'){
   $('planningHighlights').replaceChildren(el('p',message,'muted'));$('planning').replaceChildren(el('p',message,'muted'));
   if(session?.scoringScenario?.enabled===true&&latestSavedPool())$('planningHighlights').append(button('查看末池详情',openLatestPlanningDetail));
   $('planningBreakdown').hidden=true;$('planningTopPools').replaceChildren();
-  $('exportRadar').disabled=true;$('save').disabled=true;
+  updateResultExport();$('save').disabled=true;
   renderScoringScenario();
 }
 function changed(defer=false){
@@ -1559,18 +1562,36 @@ for(const id of viewDialogs){
 }
 $('openHistory').onclick=()=>{if(historyDeleting||restoring)return;cancelHistoryDeleteConfirmation();openDialog('historyDialog');refreshHistory();};
 $('openAllPlanning').onclick=()=>{openDialog('planningAllDialog');};
+$('openPlanningInfo').onclick=()=>openDialog('planningInfoDialog');
 function download(blob,name){const url=URL.createObjectURL(blob),a=el('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 $('save').onclick=()=>{if(session&&!scoreSettingPending())download(new Blob([JSON.stringify(session,null,2)],{type:'application/json'}),'抽卡评分记录.json');};
 function resultCaptureAvailable(){
   return !!session?.result&&!$('radar').hidden&&!busy&&!historyDeleting&&!restoring&&!scoreSettingPending()&&$('calculating').hidden;
 }
 function updateResultExport(){
-  $('exportRadar').disabled=resultCaptureBusy||!resultCaptureAvailable();
+  const disabled=resultCaptureBusy||!resultCaptureAvailable();
+  for(const id of ['setResultNickname','exportRadar','downloadResultImage'])$(id).disabled=disabled;
 }
-function resultSnapshot(){
+$('setResultNickname').onclick=()=>{
+  if(resultCaptureBusy||!resultCaptureAvailable())return;
+  $('resultNickname').value=resultNickname;
+  openDialog('resultNicknameDialog');
+};
+$('resultNicknameForm').onsubmit=event=>{
+  event.preventDefault();
+  resultNickname=$('resultNickname').value.trim();
+  try{
+    if(resultNickname)window.localStorage?.setItem(resultNicknameKey,resultNickname);
+    else window.localStorage?.removeItem(resultNicknameKey);
+  }catch{}
+  closeViewDialog('resultNicknameDialog');
+};
+function resultSnapshot(nickname){
   const source=$('resultCapture'),bounds=source.getBoundingClientRect();
   if(!(bounds.width>0&&bounds.height>0))throw Error('评分结果尚未显示，请稍后重试。');
   const stage=el('div'),layout=source.cloneNode(true);
+  for(const popup of layout.querySelectorAll('[popover]'))popup.remove();
+  if(nickname)layout.querySelector('.radar-panel').append(el('p',nickname,'result-image-watermark'));
   stage.setAttribute('aria-hidden','true');stage.inert=true;
   stage.style.cssText='position:fixed;left:-20000px;top:0;pointer-events:none;';
   layout.classList.add('result-snapshot-layout');stage.append(layout);document.body.append(stage);
@@ -1595,7 +1616,7 @@ function resultSnapshot(){
 }
 async function resultSnapshotPNG(capture,stillCurrent){
   await document.fonts?.ready;
-  if(!stillCurrent())throw Error('评分结果已变化，请重新点击保存结果。');
+  if(!stillCurrent())throw Error('评分结果已变化，请重新导出图片。');
   const {snapshot,width,height}=capture;
   const wrapper=document.createElementNS('http://www.w3.org/1999/xhtml','div');
   wrapper.append(snapshot);
@@ -1603,7 +1624,7 @@ async function resultSnapshotPNG(capture,stillCurrent){
   const svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+width+'" height="'+height+'"><foreignObject width="100%" height="100%">'+markup+'</foreignObject></svg>';
   const image=new Image();
   await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(Error('结果图片生成失败，请重试。'));image.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);});
-  if(!stillCurrent())throw Error('评分结果已变化，请重新点击保存结果。');
+  if(!stillCurrent())throw Error('评分结果已变化，请重新导出图片。');
   const scale=Math.min(3,Math.max(2,window.devicePixelRatio||1),8192/Math.max(width,height));
   const canvas=document.createElement('canvas');
   canvas.width=Math.ceil(width*scale);canvas.height=Math.ceil(height*scale);
@@ -1611,28 +1632,39 @@ async function resultSnapshotPNG(capture,stillCurrent){
   if(!context)throw Error('当前浏览器无法生成结果图片。');
   context.scale(scale,scale);context.drawImage(image,0,0,width,height);
   return new Promise((resolve,reject)=>canvas.toBlob(blob=>{
-    if(!stillCurrent())reject(Error('评分结果已变化，请重新点击保存结果。'));
+    if(!stillCurrent())reject(Error('评分结果已变化，请重新导出图片。'));
     else if(blob)resolve(blob);else reject(Error('结果图片生成失败，请重试。'));
   },'image/png'));
 }
-$('exportRadar').onclick=async()=>{
+async function exportResultImage(copy){
   if(resultCaptureBusy||!resultCaptureAvailable())return;
-  if(!navigator.clipboard?.write||typeof ClipboardItem!=='function'){
-    error('当前浏览器无法复制图片到剪贴板，请在支持图片剪贴板的本机浏览器中打开。');return;
+  if(copy&&(!navigator.clipboard?.write||typeof ClipboardItem!=='function')){
+    error('当前浏览器无法复制图片到剪贴板，可使用「保存图片」。');return;
   }
   const record=session,recordRevision=revision,result=session.result;
   const stillCurrent=()=>session===record&&revision===recordRevision&&session.result===result&&resultCaptureAvailable();
-  const button=$('exportRadar');resultCaptureBusy=true;button.disabled=true;button.textContent='正在复制…';error('');
+  const button=$(copy?'exportRadar':'downloadResultImage');
+  resultCaptureBusy=true;updateResultExport();button.textContent=copy?'正在复制…':'正在生成…';error('');
   try{
-    const png=resultSnapshotPNG(resultSnapshot(),stillCurrent);
-    // Invoke write during this click; the promised PNG preserves user activation
-    // while fonts and SVG rasterization finish asynchronously.
-    png.catch(()=>{});
-    await navigator.clipboard.write([new ClipboardItem({'image/png':png})]);
-    status('结果图片已复制到剪贴板，可直接粘贴。');
-  }catch(e){error(e.name==='NotAllowedError'?'未能写入剪贴板，请允许浏览器访问剪贴板后重试。':e.message||'复制结果失败，请重试。');}
-  finally{resultCaptureBusy=false;button.textContent='保存结果';updateResultExport();}
-};
+    const png=resultSnapshotPNG(resultSnapshot(resultNickname),stillCurrent);
+    if(copy){
+      // Write during the click to preserve user activation during rendering.
+      png.catch(()=>{});
+      await navigator.clipboard.write([new ClipboardItem({'image/png':png})]);
+      status('结果图片已复制到剪贴板，可直接粘贴。');
+    }else{
+      const blob=await png;
+      if(!stillCurrent())throw Error('评分结果已变化，请重新导出图片。');
+      download(blob,'终末地抽卡评分.png');
+    }
+  }catch(e){
+    error(copy&&e.name==='NotAllowedError'?'未能写入剪贴板，请允许浏览器访问剪贴板后重试。':e.message||'导出结果图片失败，请重试。');
+  }finally{
+    resultCaptureBusy=false;button.textContent=copy?'复制图片':'保存图片';updateResultExport();
+  }
+}
+$('exportRadar').onclick=()=>exportResultImage(true);
+$('downloadResultImage').onclick=()=>exportResultImage(false);
 function restoreRecordName(value,index){
   return typeof value?.displayName==='string'&&value.displayName.trim()?value.displayName:
     (Array.isArray(value?.documents)?value.documents.map(d=>typeof d?.file==='string'?d.file:'').filter(Boolean).join(' / '):'')||'第'+(index+1)+'份记录';

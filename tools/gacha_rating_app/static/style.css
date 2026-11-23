@@ -172,6 +172,11 @@ button.danger{color:#a63c32;border-color:#d1a099}button.danger:hover{background:
 .result-snapshot-layout .section-head{align-items:center;flex-wrap:nowrap}
 .result-snapshot-layout .deduction-row{gap:8px 12px}
 .result-snapshot-layout .deduction-row button{padding:4px 10px}
+.result-image-watermark{flex:none;align-self:flex-end;max-width:100%;margin:8px 0 0;text-align:right;overflow-wrap:anywhere;font-size:15px;font-weight:600;line-height:1.5;color:#58756b;unicode-bidi:plaintext}
+.result-nickname-dialog{max-width:440px}
+.result-nickname-dialog form{display:flex;flex-direction:column;min-height:0}
+#resultNickname{width:100%;margin:4px 0 8px}
+#resultNicknameHint{margin:0}
 
 #openResults.is-consistent{color:#fff;background:var(--green);border-color:var(--green)}
 #openResults.has-conflicts{color:#fff;background:var(--err);border-color:var(--err)}
@@ -210,6 +215,12 @@ button.danger{color:#a63c32;border-color:#d1a099}button.danger:hover{background:
 .result-grid>.radar-panel{display:flex;flex-direction:column;background:radial-gradient(ellipse at 51% 56%,#e9f6ef 0,#f6faf6 50%,#fffefa 84%);border-top:3px solid #29a589}
 .result-panel-heading.section-head{align-items:center;flex-wrap:nowrap;gap:10px 18px;margin-bottom:20px;min-height:54px}
 .result-panel-heading h2,.radar-panel .result-panel-heading h2{font-size:23px;font-weight:800;white-space:nowrap;color:#242f2d;margin:0;line-height:1.45}
+.planning-heading-label{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.planning-info-button{display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;background:transparent;color:#785a2b;font-size:19px;line-height:1}
+.planning-info-button:hover{background:#fff0d7}
+.result-snapshot-layout .planning-info-button{display:none}
+.planning-info-dialog{max-width:480px}
+.planning-info-dialog .dialog-scroll p:last-child{margin-bottom:0}
 .result-panel-heading .rating-title{margin:0;text-align:right;color:#202e2a;font-size:clamp(24px,2.45vw,36px);line-height:1.55;letter-spacing:.015em;font-weight:850;overflow-wrap:anywhere}
 .radar-panel #radar{flex:1;min-height:400px;display:grid;place-items:center}
 .loss-overview{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:10px;margin:0}

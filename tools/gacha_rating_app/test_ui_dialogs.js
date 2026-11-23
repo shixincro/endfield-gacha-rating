@@ -499,11 +499,22 @@ async function main() {
     assert(html.indexOf('planning-score-panel') < html.indexOf('radar-panel'));
     assert(html.indexOf('id="openResults"') < html.indexOf('id="save"'));
     assert(!h.nodes.weaponDock);assert.equal(h.nodes.weaponConfigured.tagName,'BUTTON'); assert(h.nodes.luckTitle);
-    const order=['openResults','weaponConfigured','manualSupplement','exportRadar','save'].map(id=>html.indexOf('id="'+id+'"'));
+    const order=['openResults','weaponConfigured','manualSupplement','setResultNickname','exportRadar','downloadResultImage','save'].map(id=>html.indexOf('id="'+id+'"'));
     assert.deepEqual(order,[...order].sort((a,b)=>a-b));assert(order[0]>=0);assert(!html.includes('<footer>'));
     for (const id of ['planningDetailDialog', 'planningAllDialog', 'resultsDialog', 'historyDialog']) {
       assert(h.nodes[id]); assert.equal(h.nodes[id].open, false, id + ' must remain closed on load');
     }
+  });
+  await test('the planning help button opens the initially closed dialog without changing scores',async()=>{
+    const h=await loaded(),before=h.state(),requests=h.requests.length;
+    const dialog=h.nodes.planningInfoDialog,button=h.nodes.openPlanningInfo;
+    assert.equal(button.getAttribute('aria-controls'),'planningInfoDialog');
+    assert(!dialog.open);
+    button.click();assert(dialog.open);
+    const close=h.staticNodes.find(node=>node.dataset.closeDialog==='planningInfoDialog');
+    close.click();assert(!dialog.open);
+    button.click();escape(dialog);assert(!dialog.open);
+    assert.deepEqual(h.state(),before);assert.equal(h.requests.length,requests);
   });
   await test('expected losses fill five places when no actual extremes are available or they overlap', async () => {
     const h = harness(); await tick(); const saved = record();
@@ -2692,9 +2703,11 @@ async function main() {
     assert.equal(h.nodes.notifications.parentNode,h.nodes.planningDetailDialog);assert(!h.nodes.notifications.focused);
     h.nodes.error.querySelector('button').click();h.advanceTimers(250);assert(h.nodes.error.hidden);
   });
-  await test('save result sits beside review and captures a fixed landscape result without changing JSON save',async()=>{
+  await test('result image actions sit beside review and keep the fixed landscape export and JSON save',async()=>{
     const header=html.slice(html.indexOf('class="section-head record-meta"'),html.indexOf('<div class="result-grid"'));
-    assert(header.includes('id="openResults"'));assert(header.includes('id="exportRadar"'));assert(header.includes('>保存结果</button>'));
+    assert(header.includes('id="openResults"'));assert(header.includes('id="exportRadar"'));
+    for(const label of ['设置昵称','复制图片','保存图片'])assert(header.includes('>'+label+'</button>'));
+    assert(!header.includes('>保存结果</button>'));
     assert(!html.includes('>导出雷达图</button>'));assert.equal((html.match(/id="exportRadar"/g)||[]).length,1);
     assert(html.includes('id="resultCapture"'));assert(header.includes('>保存记录JSON</button>'));
     const css=fs.readFileSync(path.join(staticDir,'style.css'),'utf8');
@@ -2716,17 +2729,38 @@ async function main() {
     assert(h.nodes.exportRadar.disabled);assert.equal(h.nodes.exportRadar.textContent,'正在复制…');
     assert(!h.nodes.status.textContent.includes('已复制'));h.nodes.exportRadar.click();assert.equal(writes.length,1);
     finish(new Blob(['png'],{type:'image/png'}));await action;
-    assert(h.nodes.status.textContent.includes('结果图片已复制到剪贴板'));assert.equal(h.nodes.exportRadar.textContent,'保存结果');
+    assert(h.nodes.status.textContent.includes('结果图片已复制到剪贴板'));assert.equal(h.nodes.exportRadar.textContent,'复制图片');
     assert(!h.nodes.exportRadar.disabled);assert.deepEqual(h.state(),before);
   });
-  await test('stale scores and pending edits cannot copy a result',async()=>{
+  await test('stale scores and pending edits disable both result image actions',async()=>{
     const {h,writes}=await clipboardHarness();h.ctx.markStale();await h.nodes.exportRadar.onclick();assert.equal(writes.length,0);
+    assert(h.nodes.downloadResultImage.disabled);assert(h.nodes.setResultNickname.disabled);
     h.ctx.renderResults();h.read('planningSettingRequest={};');await h.nodes.exportRadar.onclick();assert.equal(writes.length,0);
   });
   await test('clipboard rejection displays an error and restores the result button',async()=>{
     const {h}=await clipboardHarness();h.ctx.navigator.clipboard.write=async()=>{throw Object.assign(Error('denied'),{name:'NotAllowedError'});};
     await h.nodes.exportRadar.click();assert(h.nodes.error.textContent.includes('允许浏览器访问剪贴板'));assert(!h.nodes.exportRadar.disabled);
     assert(!h.nodes.status.textContent.includes('结果图片已复制'));
+  });
+  await test('nickname stays out of the record and is used by both PNG export actions',async()=>{
+    const {h,writes}=await clipboardHarness(),before=h.state(),storage=new Map(),captured=[],downloads=[];
+    const requests=h.requests.length;
+    h.ctx.window.localStorage={setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)};
+    h.ctx.resultSnapshot=nickname=>{captured.push(nickname);return {width:1440,height:800};};
+    h.ctx.download=(image,name)=>downloads.push({image,name});
+    h.nodes.setResultNickname.click();assert(h.nodes.resultNicknameDialog.open);
+    h.nodes.resultNickname.value='  <录制样例>&  ';
+    h.nodes.resultNicknameForm.dispatchEvent({type:'submit'});
+    assert.equal(storage.get('endfield.resultNickname'),'<录制样例>&');
+    assert(!h.nodes.resultNicknameDialog.open);
+    await h.nodes.exportRadar.click();await h.nodes.downloadResultImage.click();
+    assert.deepEqual(captured,['<录制样例>&','<录制样例>&']);
+    assert.equal(writes.length,1);
+    assert.equal(downloads[0].image.type,'image/png');assert.equal(downloads[0].name,'终末地抽卡评分.png');
+    h.nodes.setResultNickname.click();assert.equal(h.nodes.resultNickname.value,'<录制样例>&');
+    h.nodes.resultNickname.value=' ';h.nodes.resultNicknameForm.dispatchEvent({type:'submit'});
+    assert(!storage.has('endfield.resultNickname'));await h.nodes.downloadResultImage.click();assert.equal(captured[2],'');
+    assert.deepEqual(h.state(),before);assert.equal(h.requests.length,requests);
   });
   await test('a changed record cancels the pending PNG instead of copying stale scores',async()=>{
     const {h}=await clipboardHarness();let finish;

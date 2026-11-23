@@ -82,8 +82,11 @@ def build(args):
     for directory,names in APPLICATION_FILES.items():
         for name in names:
             copy(ROOT/'tools'/directory/name,package/'tools'/directory/name)
-    for name in ('LICENSE','README.md','THIRD_PARTY_NOTICES.md','docs/ALGORITHMS.md','examples/demo-session.json',
-                 'scripts/download_assets.py','scripts/check_environment.py'):
+    for name in ('LICENSE','README.md','CONTRIBUTING.md','THIRD_PARTY_NOTICES.md',
+                 'docs/ALGORITHMS.md','docs/BROWSER.md','docs/CHARACTER_SCORING.md',
+                 'docs/WEAPON_SCORING.md','docs/PLANNING_LOSS.md','docs/RECORD_FORMAT.md',
+                 'docs/CHARACTER_SCORE_SIMULATION.md','docs/RELEASING.md',
+                 'examples/demo-session.json','scripts/download_assets.py','scripts/check_environment.py'):
         copy(ROOT/name,package/name)
     copy(ROOT/'scripts/windows_portable_launcher.py',package/'portable_launch.py')
     copy(ROOT/'scripts/check_windows_runtime.py',package/'check_runtime.py')
