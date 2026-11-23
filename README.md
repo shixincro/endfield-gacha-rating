@@ -1,19 +1,36 @@
 # 终末地抽卡评分工具
 
-在本机识别小黑盒抽卡截图，核对记录，并计算六维欧非与规划亏损。网页、识图和评分均在本机运行。
-
-浏览器本地计算版本已提供在线体验，访问者无需安装 Python 或 Node.js。构建方式和验证范围见 [浏览器版说明](docs/BROWSER.md)。
+识别小黑盒抽卡截图或导入 TXT / JSON 记录，核对账本并计算六维欧非与规划亏损。网页可直接使用，识图、评分和记录保存都在访问者的浏览器内完成。
 
 维护者：[shixincro](https://github.com/shixincro)。原创代码使用 [MIT 许可证](LICENSE)。游戏素材与第三方依赖遵循各自的许可，见 [第三方说明](THIRD_PARTY_NOTICES.md)。
 
 ## 在线体验
 
-- [Cloudflare 临时在线版](https://endfield-gacha-rating.endfield-gacha-rating-cloudflare.workers.dev/)
-- [ChatGPT Sites 临时在线版](https://endfield-gacha-rating.aqargwbmncht.chatgpt.site/)
+**[打开终末地抽卡评分工具（shixincro.top）](https://shixincro.top/)**
 
-两个临时站点分别由 Cloudflare 和 ChatGPT Sites 托管，使用 `workers.dev` 和 `chatgpt.site` 域名。网页顶部的“GitHub 开源”链接指向本仓库，可用于核对项目来源。
+浏览器版无需安装 Python 或 Node.js。记录保存在当前浏览器和当前网址下。从旧网址换到正式站时，可先导出记录 JSON，再到正式站导入。
 
-识图与评分均在访问者浏览器内完成，记录保存在该浏览器本地。可导出记录 JSON 备份，清除网站数据会删除该浏览器保存的记录。
+<details>
+<summary>早期在线入口</summary>
+
+旧站与正式站的浏览器记录各自保存，网页版本也可能不同。
+
+- [Cloudflare](https://endfield-gacha-rating.endfield-gacha-rating-cloudflare.workers.dev/)
+- [ChatGPT Sites](https://endfield-gacha-rating.aqargwbmncht.chatgpt.site/)
+
+</details>
+
+## 算法与仿真文档
+
+| 页面 | 内容 |
+| --- | --- |
+| [算法总览](docs/ALGORITHMS.md) | 六轴怎么看、计算边界与模块版本 |
+| [角色欧非](docs/CHARACTER_SCORING.md) | 大保底区、无大保底区、加急合分、歪 New 修正与五星校准 |
+| [武器欧非](docs/WEAPON_SCORING.md) | 六星武器和当期专武的十池参照、潜能与直赠 |
+| [规划亏损](docs/PLANNING_LOSS.md) | 期望、机会和实际亏损，逐池结算与示例 |
+| [导入与账本](docs/RECORD_FORMAT.md) | 赠品、数据缺项、中断修正与假设保底 |
+| [角色仿真对照](docs/CHARACTER_SCORE_SIMULATION.md) | 24 种抽法、12,288 条合成账本，查看总分、分段、分布和 New 调整 |
+| [浏览器版说明](docs/BROWSER.md) | 本地计算、记录迁移与构建部署 |
 
 ## 功能
 
@@ -21,7 +38,7 @@
 - TXT / JSON 导入：按内容识别已适配的导出格式，自动整理出货、加急、赠品与武器配置。
 - 六维评分：角色六星、当期 UP、限定、角色五星、六星武器、当期专武。
 - 记录修正：即时校验、手动补充记录、中断修正、首池信息、武器潜能及溢出配置。
-- 规划亏损：逐池详情、单项豁免、假设补到保底并重新评分。
+- 规划亏损：期望、机会和实际亏损，支持逐池查看、豁免和假设补到保底。
 - 本机历史：保存、重开、批量删除、导出与恢复记录 JSON。
 - 保存结果：将规划亏损与六维图按左右并排布局复制到剪贴板。
 
@@ -31,7 +48,7 @@
 
 ### Windows 便携版
 
-下载 [Windows x64 便携版 v0.2.0](https://github.com/shixincro/endfield-gacha-rating/releases/download/v0.2.0/EndfieldGacha-Windows-x64-v0.2.0.zip)，完整解压后双击“启动抽卡工具.cmd”。包内已包含 Python、Node.js 和 OCR 模型，不需要另外安装。
+下载 [Windows x64 便携版 v0.2.0](https://github.com/shixincro/endfield-gacha-rating/releases/download/v0.2.0/EndfieldGacha-Windows-x64-v0.2.0.zip)，完整解压后双击“启动抽卡工具.cmd”。包内已包含 Python、Node.js 和 OCR 模型，不需要另外安装。此包对应 `v0.2.0` 发布标签，算法文档说明的是当前 `main` 的源码。
 
 首次启动会联网准备头像素材，之后可离线使用。若下载暂时失败，可先导入 TXT / JSON，联网后运行“下载头像素材.cmd”。停止后台服务请双击“停止抽卡工具.cmd”。
 
@@ -67,7 +84,7 @@ py -3.12 -m venv .venv
 1. 首页选择或拖入小黑盒截图、TXT / JSON 记录，点击“开始导入”。每批最多 12 个文件，图片与记录可混选，各人独立建档。
 2. 用“限定池识别结果”修正角色信息，用“武器修正”填写武器配置。红色入口表示存在待处理矛盾，绿色表示记录自洽。
 3. 截图外的记忆记录通过“手动补充记录”追加。截图中的“已垫”是原记录推算值，补充后会重新计算相连卡池的水位。
-4. 点击六维区域揭晓评分，使用“保存结果”复制结果图，或“保存记录 JSON”备份完整记录。
+4. 在六维雷达图查看评分，悬停角色轴可看明细。使用“保存结果”复制结果图，或“保存记录 JSON”备份记录。
 
 记录丢失时，可在“限定池识别结果 → 中断修正”排除缺失卡池，并在恢复点补充六星图鉴与起始水位。补充六星只更新持有图鉴，不增加抽数或出货数；图鉴补齐后勾选“此处六星图鉴已补全”。补充水位只用于欧非，亏损估值仍按中断后的零水位计算。
 
@@ -83,9 +100,7 @@ py -3.12 -m venv .venv
 
 桌面版 Python 服务只用于本机访问；在线使用应部署浏览器版生成的静态目录，不要把桌面版服务直接暴露到公网。浏览器版不提供账号或云同步。提交 Issue 时请使用演示记录或脱敏材料，避免附带玩家 UID、原始截图与私人记录。
 
-## 算法与局限
-
-见 [算法说明](docs/ALGORITHMS.md)。角色六星、UP 等模块使用确定性 DP；五星和武器的最终分数含近似或校准步骤。各轴使用指定参照模型，不等于真实玩家排名，也不保证所有停手策略均分 50。
+### 识图适用范围
 
 识图主要支持小黑盒单列截图。已适配一类宽屏布局，但居中、大面积留白、双列、遮挡和低清头像仍可能需要人工核对；识别到总抽数不代表六项评分所需信息都完整。
 
@@ -103,6 +118,7 @@ py -3.12 -m venv .venv
 ```text
 tools/gacha_rating_app/      本地服务、网页、账本校验、角色评分与规划
 tools/gacha_ocr_prototype/   OCR、头像定位和匹配、素材清单
+tools/character_abc_score/  角色六星、当期 UP 和限定评分
 tools/character_five_score/ 五星评分与冻结校准参数
 tools/weapon_score_v2/      武器 DP 与评分
 browser/                    浏览器 Worker、IndexedDB、武器 JS、Python/OCR 桥
