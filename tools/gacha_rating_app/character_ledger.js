@@ -2,7 +2,7 @@
 
 // Retained ledger validation, quota/Five-star calculation and legacy diagnostics.
 // Production first-three scores are replaced by character_result_score.js.
-const {scoreFive, normalCDF, VERSION: FIVE_VERSION} = require('../character_five_score/scorer');
+const {BASELINE, scoreFive, normalCDF, VERSION: FIVE_VERSION} = require('../character_five_score/scorer');
 const VERSION = 'character-ledger-v1-20261015-si-catalog';
 const LIMITED = Object.freeze(['莱万汀','洁尔佩塔','伊冯','汤汤','洛茜','庄方宜','弭弗','卡缪','诀','梨诺','提弗洛斯','祀','明河']);
 const BANNERS = Object.freeze(['熔火灼痕','轻飘飘的信使','热烈色彩','河流的女儿','狼珀','春雷动，万物生','拳出无悔','逐罪者','临渊望北','晨星于此闪耀','冬猎','万物更新','烟火邀星河']);
@@ -247,7 +247,14 @@ function scoreCharacter(record) {
   const fiveDetails={counts,method:FIVE_VERSION,input:{N,R,F},quotaSource:quotaSummary!=null?'same-scope-total':'per-pool-sum'};
   if(problems.five.length)axes.five=unscored(problems.five,fiveDetails);
   else {
-    try {const value=scoreFive({N,R,F});axes.five=value==null?unscored(['没有可评分的五星样本'],fiveDetails):{score:value,status:'scored',details:fiveDetails};}
+    try {
+      const value=scoreFive({N,R,F});
+      if(value==null)axes.five=unscored(['没有可评分的五星样本'],fiveDetails);
+      else {
+        const expectedFive=N*BASELINE.mainRate+R*BASELINE.rushMean;
+        axes.five={score:value,status:'scored',details:{...fiveDetails,expectedFive}};
+      }
+    }
     catch(error){axes.five=unscored([`五星输入不满足校准模块条件：${error.message}`],fiveDetails);}
   }
   return {version:VERSION,axes,warnings:unique(warnings),counts,segments,coverage};

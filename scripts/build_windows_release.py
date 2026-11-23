@@ -16,7 +16,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 ROOT=Path(__file__).resolve().parents[1]
 APPLICATION_FILES={
     'gacha_rating_app': [
-        'server.py','service.py','importer.py','planning.py','opportunity.py','hypothesis.py',
+        'server.py','service.py','importer.py','planning.py','opportunity.py','actual_loss.py','hypothesis.py',
         'history_interruption.py','weapon_scoring.py','structured_export.py','record_import.py','score_cli.js',
         'character_score.js','character_ledger.js','character_result_score.js','character_result_math.js',
         'character_up_score.js','character_up_dp.js','character_six_count.js','character_limited_count.js',
@@ -24,6 +24,7 @@ APPLICATION_FILES={
         'static/index.html','static/style.css','static/app.js','static/ui-model.js',
         'static/character-edit.js','static/manual-supplement.js'],
     'character_five_score':['scorer.js','parameters.json'],
+    'character_abc_score':['flat_score.js','flat_a.js','flat_b.js','flat_b_stop.js','flat_new.js','ledger.js'],
     'weapon_score_v2':['average_inference.py','potential_profile_score.py','ten_pool_reference.py','scorer.py'],
     'gacha_ocr_prototype':['recognize.py','avatar_locator.py','avatar_match.py','header_avatar.py','assets/manifest.json'],
 }

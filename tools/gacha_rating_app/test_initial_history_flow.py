@@ -147,23 +147,23 @@ class InitialHistoryFlowTests(unittest.TestCase):
         data['character']['completeHistory'] = True
         result = self.score_without_mutation(data)
         self.assertEqual(result['character']['counts']['offNew'], 1)
-        identities = result['axes']['limited']['details']['identities']
-        second = next(row for row in identities if row['pool'] == 'opening-test-10')
-        self.assertEqual(second['missing'], 1)
-        self.assertEqual(second['weight'], 2)
+        self.assertEqual(result['character']['actual']['byAxis']['limited']['A']['limited'], 2)
+        adjustment = result['axes']['limited']['details']['newAdjustment']
+        self.assertEqual(adjustment['observed'], 1)
+        self.assertEqual(adjustment['status'], 'scored')
         row = result['planning']['pools'][1]
         self.assertEqual(row['status'], 'ok')
         self.assertEqual(row['anchor']['kind'], 'new-limited')
         self.assertEqual(row['idealStop'], 20)
 
-    def test_preowned_target_resolves_opportunity_without_adding_output(self):
+    def test_preowned_target_keeps_the_stop_quote_without_adding_output(self):
         result = self.score_without_mutation(
             ledger([pool(8, 30)], owned=['诀']))
         counts = result['character']['counts']
         self.assertEqual((counts['main'], counts['six'], counts['up']), (30, 0, 0))
         opportunity = result['planning']['pools'][0]['opportunity']
-        self.assertEqual(opportunity['value'], 0)
-        self.assertEqual(opportunity['reason'], 'target-already-obtained')
+        self.assertAlmostEqual(opportunity['value'], 1.3404073991)
+        self.assertEqual(opportunity['reason'], 'estimated')
 
 
 if __name__ == '__main__':

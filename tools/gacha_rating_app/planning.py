@@ -11,7 +11,11 @@ import json
 import math
 from pathlib import Path
 
-VERSION = "planning-stopped-pools-v2.3-20261104"
+import actual_loss
+import opportunity
+
+# Stored ratings need recalculation when any of the three algorithms changes.
+VERSION = f"planning-three-losses-v3.1+{actual_loss.VERSION}+{opportunity.VERSION}"
 TABLE_FILE = Path(__file__).with_name("water_values.json")
 
 
@@ -321,12 +325,14 @@ def score_planning(character: dict) -> dict:
            for a, b in zip(pools, pools[1:])):
         result["warnings"].append("角色卡池必须按不重复的时间顺序排列")
         return result
+    result['actualLoss'] = actual_loss.score_actual_loss(character)
+    from collections import Counter
     from importer import BANNERS
-    from opportunity import quote
     limited = set(BANNERS.values())
     initial_owned = character.get('initialOwned')
     ownership_known = isinstance(initial_owned, list) and all(isinstance(n, str) and n for n in initial_owned)
     owned = set(initial_owned) if ownership_known else set()
+    known_copies = Counter(owned)  # the opening catalog proves ownership, not potential
     for i, pool in enumerate(pools):
         previous = pools[i-1] if i else None
         if pool.get('interruptionBefore') or (previous is not None and not _next_is_contiguous(previous, pool) and not character.get('completeHistory')):
@@ -334,8 +340,9 @@ def score_planning(character: dict) -> dict:
         if pool.get('interruptionBefore'):
             catalog = pool.get('interruptionCatalog') or {}
             owned.update(catalog.get('ownedSixStars', []))
+            for name in catalog.get('ownedSixStars', []):
+                known_copies[name] = max(1, known_copies[name])
             ownership_known = catalog.get('catalogComplete') is True
-        held = pool.get('up') in owned if ownership_known or pool.get('up') in owned else None
         # Validate the original resource ledger first. New uncertainty is an A-only
         # ambiguity, not a source conflict, and must not suppress a valid B quote.
         source_row = _row(pool, previous, character, values)
@@ -351,12 +358,15 @@ def score_planning(character: dict) -> dict:
                     else:
                         context['unknownNewPositions'].append(at)
                 owned.add(name)
+                if name in limited:
+                    known_copies[name] += 1
+            known_copies[pool['up']] += len(pool.get('tokens', []))
             row = _row(pool, previous, character, values, context)
         else:
             row = source_row
             # Missing source events can hide prior ownership in subsequent pools.
             ownership_known = False
-        row['opportunity'] = quote(pool, source_row, held)
+        row['opportunity'] = opportunity.quote(pool, source_row, known_copies[pool.get('up')])
         if row['status'] == 'ok':
             row['exemptedLoss'] = max(row['localLoss'], 0) if row['planningExempt'] else 0
             row['countedLoss'] = row['localLoss'] - row['exemptedLoss']
@@ -391,6 +401,6 @@ def score_planning(character: dict) -> dict:
         'partialPools': sum(q['status'] == 'partial' for q in quotes),
         'provisionalPools': sum(q['status'] == 'provisional' for q in quotes),
         'complete': bool(pools) and len(known) == len(pools) and math.isfinite(quoted_sum),
-        'approximate': True, 'note': '独立机会估值，不与资源损耗A相加，不参与主称号。',
+        'approximate': True, 'note': '机会亏损独立展示，主称号沿用期望亏损。',
     }
     return result

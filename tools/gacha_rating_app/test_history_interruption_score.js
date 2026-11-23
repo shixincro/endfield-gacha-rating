@@ -57,7 +57,9 @@ test('new comparison uses independent0 start laws rather than80 inherited draws'
   checkScored(a);checkScored(b);
   assert.deepEqual(countSegments(continuous).segments,[{initialPity:0,mainDraws:80,mainSix:1}]);
   assert.notEqual(a.axes.characterSix.score,b.axes.characterSix.score);
-  assert.equal(a.axes.up.details.completed[0].actual,80);
+  assert.equal(a.actual.byAxis.up.A.draws,80);
+  assert.equal(a.actual.byAxis.up.A.up,1);
+  assert.ok(b.axes.up.details.flatABCFallbackReason);
   assert.equal(b.axes.up.details.completed[0].actual,50);
 });
 

@@ -81,7 +81,7 @@ class DualPlanningTests(unittest.TestCase):
             (fixture(70, [(70, '别礼')]), 47.8888743482, 16.0780670871),
             (fixture(60), 10.6900087145, 4.0132180152),
             (fixture(119, [(55, '别礼'), (119, '卡缪')]), 0, 60.4774544180),
-            (fixture(30, rush=('诀',)), 0, 0),
+            (fixture(30, rush=('诀',)), 0, 1.3404073991),
             (fixture(50, [(30, '卡缪'), (50, '卡缪')]), 20, 10.0790808946),
         ]
         for data, a, b in cases:
@@ -96,7 +96,7 @@ class DualPlanningTests(unittest.TestCase):
         self.assertIsNone(row['localLoss'])
         self.assertEqual(row['status'], 'partial')
         self.assertEqual(row['unknownNewPositions'], [70])
-        self.assertIsNone(row['opportunity']['value'])
+        self.assertAlmostEqual(row['opportunity']['value'], 16.0780670871)
         row = self.row(fixture(40, [(30, '卡缪'), (40, '诀')], owned=None))
         self.assertEqual(row['localLoss'], 0)
         self.assertEqual(row['opportunity']['value'], 0)
@@ -109,7 +109,7 @@ class DualPlanningTests(unittest.TestCase):
         data['pools'].insert(0, first)
         row = score_planning(data)['pools'][1]
         self.assertIsNone(row['localLoss'])
-        self.assertEqual(row['opportunity']['value'], 0)
+        self.assertAlmostEqual(row['opportunity']['value'], 16.0780670871)
 
     def test_new_anchor_identity_and_same_position_order(self):
         row = self.row(fixture(30, [(30, '卡缪')], rush=('卡缪',)))
@@ -118,10 +118,49 @@ class DualPlanningTests(unittest.TestCase):
         self.assertEqual(len(row['newLimitedHits']), 1)
         self.assertEqual(row['anchor']['source'], 'main')
 
-    def test_target_preowned_does_not_force_potential(self):
-        row = self.row(fixture(60, owned=('诀',)))
-        self.assertEqual(row['opportunity']['value'], 0)
-        self.assertEqual(row['opportunity']['reason'], 'target-already-obtained')
+    def test_main_up_closes_guarantee_but_ownership_and_rush_up_do_not(self):
+        for events in ((), [(30, '卡缪')]):
+            reference = self.row(fixture(30, events))['opportunity']
+            self.assertGreater(reference['value'], 0)
+            for owned in (None, (), ('诀',)):
+                for rush in ((), ('诀',)):
+                    with self.subTest(events=events, owned=owned, rush=rush):
+                        self.assertEqual(self.row(fixture(30, events, owned=owned, rush=rush))
+                                         ['opportunity'], reference)
+        main_up = self.row(fixture(30, [(30, '诀')]))['opportunity']
+        self.assertEqual((main_up['reason'], main_up['value']), ('main-up-already-obtained', 0))
+
+    def test_opportunity_moves_from_120_to_each_next_token(self):
+        hits = [(58, '别礼'), (112, '别礼'), (120, '诀'), (170, '卡缪'), (230, '别礼'),
+                (288, '别礼'), (345, '卡缪'), (400, '别礼'), (459, '别礼')]
+        for total, deadline in ((119, 120), (120, 240), (239, 240), (240, 480), (480, 720)):
+            with self.subTest(total=total):
+                row = self.row(fixture(total, [hit for hit in hits if hit[0] <= total]))
+                self.assertEqual(row['opportunity']['deadline'], deadline)
+                self.assertEqual(row['opportunity']['reason'], 'estimated' if total<120 else 'token-vs-flat')
+
+    def test_full_potential_uses_confirmed_copies_but_only_after_120(self):
+        hits = [(20, '诀'), (60, '诀'), (120, '诀'), (180, '诀'), (235, '诀')]
+        with_token = self.row(fixture(240, hits))['opportunity']
+        self.assertEqual((with_token['reason'], with_token['value']), ('target-full-potential', 0))
+        self.assertEqual(self.row(fixture(240, hits[1:]))['opportunity']['deadline'], 480)
+        at_239 = self.row(fixture(239, hits, owned=('诀',)))['opportunity']
+        self.assertEqual(at_239['reason'], 'target-full-potential')
+        with_rush = self.row(fixture(239, hits, rush=('诀',)))['opportunity']
+        self.assertEqual(with_rush['reason'], 'target-full-potential')
+        early = self.row(fixture(110, [(i, '诀') for i in range(10, 61, 10)]))['opportunity']
+        self.assertEqual(early['reason'], 'main-up-already-obtained')
+
+    def test_token_uses_paid_cost_vs_flat_without_terminal_water_quote(self):
+        hits = [(60, '别礼'), (120, '诀'), (180, '别礼')]
+        far = self.row(fixture(120, hits[:2]))['opportunity']
+        self.assertGreater(far['stay']['paid'], 61.85788564745958)
+        self.assertEqual(far['value'], 0)
+        next_draw = self.row(fixture(239, hits))['opportunity']
+        self.assertEqual(next_draw['stay']['paid'], 1)
+        self.assertAlmostEqual(next_draw['value'], 60.85788564745958)
+        self.assertNotIn('terminal', next_draw['stay'])
+        self.assertAlmostEqual(opportunity.paid_to_up_or_token(2, 0), 1.996)
 
     def test_source_errors_remain_unknown(self):
         for change in ({'complete': False}, {'tail': 12}, {'rushUsed': None}):
@@ -138,7 +177,7 @@ class DualPlanningTests(unittest.TestCase):
         data['pools'].append(second)
         row = score_planning(data)['pools'][1]
         self.assertIsNone(row['localLoss'])
-        self.assertIsNone(row['opportunity']['value'])
+        self.assertAlmostEqual(row['opportunity']['value'], .2012596164)
 
     def test_summary_is_two_independent_sums(self):
         result = score_planning(fixture(70, [(70, '卡缪')]))

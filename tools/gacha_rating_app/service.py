@@ -43,7 +43,10 @@ def validate_ledger(ledger):
     if not isinstance(character, dict):
         raise ValueError('角色记录格式错误。')
     from history_interruption import normalize_correction
+    from actual_loss import valid_standard_value
     normalize_correction(character.get('interruptionCorrection'))
+    if 'actualLossStandardValue' in character and not valid_standard_value(character['actualLossStandardValue']):
+        raise ValueError('常驻估值须为 0 至 10000 抽。')
     pools = character.get('pools', [])
     if not isinstance(pools, list) or len(pools) > 80:
         raise ValueError('角色池列表异常（最多80池）。')
@@ -157,7 +160,7 @@ def score_session_result(documents, ledger, scenario, *, reviewed=False):
     return result
 
 
-def score_ledger(ledger):
+def score_ledger(ledger, *, actual_character=None):
     validate_ledger(ledger)
     from history_interruption import project_ledger, refresh_projected_mechanics
     planning_ledger, _ = project_ledger(ledger, for_planning=True)
@@ -217,8 +220,12 @@ def score_ledger(ledger):
                 axes[axis] = unscored(issue.get('message', '导入记录存在冲突'))
     from planning import score_planning
     planning = score_planning(planning_ledger.get('character') or {'pools': []})
+    if actual_character is not None:
+        from actual_loss import score_actual_loss
+        planning['actualLoss'] = score_actual_loss(actual_character)
     planning_conflicts = [i for i in conflicts if not i.get('axes') or any(a in i['axes'] for a in ('characterSix','up','planning'))]
     if planning_conflicts:
+        from actual_loss import summarize
         from opportunity import unavailable
         reasons = [i.get('message','来源冲突') for i in planning_conflicts]
         for row in planning.get('pools', []):
@@ -236,6 +243,11 @@ def score_ledger(ledger):
                                             'poolCount':len(planning.get('pools',[])),
                                             'partialPools':len(planning.get('pools',[]))}}
         planning.setdefault('warnings',[]).extend(reasons)
+        if actual := planning.get('actualLoss'):
+            for row in actual['pools']:
+                row.update(settlements=[], warnings=reasons, pending=False,
+                           pendingPaid=0, pendingVouchers=0, tailWater=None)
+            summarize(actual)
     valid = [a.get('score') for a in axes.values() if isinstance(a.get('score'), (int,float)) and math.isfinite(a['score'])]
     return {'version':VERSION, 'weaponVersion':WEAPON_VERSION, 'axes':axes, 'mean':None,
             'interruptionCorrection':interruption,

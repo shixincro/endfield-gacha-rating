@@ -1,8 +1,10 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {scoreCharacter,LIMITED,BANNERS,VERSION}=require('./character_score');
+const {scoreResults}=require('./character_result_score');
 const legacy=require('./character_ledger');
+const {LIMITED,BANNERS}=legacy;
+const scoreCharacter=record=>scoreResults(record,legacy.scoreCharacter(record),legacy);
 const m=require('./character_result_math');
 const pool=(i,n,events=[],extra={})=>({id:`p${i}`,index:i,banner:BANNERS[i],up:LIMITED[i],total:n,
   events:events.map(([at,character,forced=false])=>({at,character,forced,source:'main'})),
@@ -11,8 +13,7 @@ const record=(pools,extra={})=>({pools,initialPity:0,initialOwned:[],completeHis
 const value=(r,key)=>{const a=scoreCharacter(r).axes[key];assert.equal(a.status,'scored',a.reason);return a.score;};
 const near=(a,b,tol=1e-8)=>assert.ok(Math.abs(a-b)<tol,`${a} != ${b}`);
 
-test('production uses count DP while preserving total-count equivalence',()=>{
-  assert.equal(VERSION,'character-count-merged-up-v5-catalog-20261105');
+test('compatible count DP preserves total-count equivalence',()=>{
   const a=record([pool(0,100,[[20,LIMITED[0]],[100,LIMITED[0]]])]);
   const b=record([pool(0,100,[[50,LIMITED[0]],[100,LIMITED[0]]])]);
   near(value(a,'characterSix'),value(b,'characterSix'));

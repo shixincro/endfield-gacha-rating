@@ -99,6 +99,8 @@ async function ready(page) {
   await page.waitForFunction(() => !!window.BrowserRating?.api, null, {timeout:180000});
   const config = await api(page, '/api/config');
   assert.equal(config.localOnly,true);
+  // Also wait for the actual UI entry point, not just direct adapter calls.
+  await page.waitForFunction(() => typeof recognitionVersion === 'string' && recognitionVersion.length > 0, null, {timeout:180000});
   return config;
 }
 async function uiLoad(page, value) {

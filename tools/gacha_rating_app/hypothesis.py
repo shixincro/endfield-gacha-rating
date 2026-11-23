@@ -20,9 +20,11 @@ def _prepare(documents, ledger, pool_id, mode, *, reviewed=False):
         raise ValueError('请选择补到首个UP的120保底，或补到下一次六星保底。')
     current = revalidate_current_ledger(documents, ledger, reviewed=reviewed)
     from history_interruption import project_ledger, refresh_projected_mechanics
+    actual, _ = project_ledger(current, for_planning=True)
     current, correction = project_ledger(current)
     if correction['enabled']:
         refresh_projected_mechanics(current)
+        refresh_projected_mechanics(actual)
     pools = current.get('character', {}).get('pools', [])
     selected = [pool for pool in pools if pool.get('id') == pool_id]
     if len(selected) != 1:
@@ -85,16 +87,17 @@ def _prepare(documents, ledger, pool_id, mode, *, reviewed=False):
             'mode':mode, 'fromTotal':total, 'toTotal':target, 'addedDraws':target-total,
             'fromPity':pity, 'toPity':0, 'hasMainUp':has_up, 'firstUpDeadline':deadline,
             'events':events, 'additionalFiveMin':minimum_five, 'additionalFiveMax':target-total-len(events)}
-    return current, pool, plan, notices, correction
+    return current, pool, plan, notices, correction, actual.get('character')
 
 
 def plan_hypothesis(documents, ledger, pool_id, mode, *, reviewed=False):
-    _, _, plan, notices, _ = _prepare(documents, ledger, pool_id, mode, reviewed=reviewed)
+    _, _, plan, notices, _, _ = _prepare(documents, ledger, pool_id, mode, reviewed=reviewed)
     return {'plan':plan, 'notices':notices}
 
 
 def preview_hypothesis(documents, ledger, pool_id, mode, *, choices=None, additional_five=None, reviewed=False):
-    baseline, _, plan, notices, correction = _prepare(documents, ledger, pool_id, mode, reviewed=reviewed)
+    baseline, _, plan, notices, correction, actual_character = _prepare(
+        documents, ledger, pool_id, mode, reviewed=reviewed)
     if choices is None:
         choices = {}
     if not isinstance(choices, dict) or any(key not in {str(event['at']) for event in plan['events']} for key in choices):
@@ -108,7 +111,7 @@ def preview_hypothesis(documents, ledger, pool_id, mode, *, choices=None, additi
                 raise ValueError('前置六星若已获得当期UP，首UP120保底就会解除；不能同时假设先UP再首UP120。')
             raise ValueError(f"请为第{event['at']}抽选择本计划允许的六星角色。")
         event['character'] = selected
-    before = score_ledger(baseline)
+    before = score_ledger(baseline, actual_character=actual_character)
     # The prepared view no longer contains excluded pools. Preserve the scope
     # audit derived from the original ledger, not from a twice-filtered view.
     before['interruptionCorrection'] = copy.deepcopy(correction)
@@ -165,6 +168,7 @@ def preview_hypothesis(documents, ledger, pool_id, mode, *, choices=None, additi
     simulated['hypothesis'] = {'poolId':pool_id, 'mode':mode, 'addedDraws':plan['addedDraws'],
                                'additionalFive':additional_five, 'persistable':False}
     after = score_ledger(simulated)
+    after['planning']['actualLoss'] = before['planning']['actualLoss']
     after['interruptionCorrection'] = copy.deepcopy(correction)
     if five_reason:
         after['axes']['five'] = unscored(five_reason)

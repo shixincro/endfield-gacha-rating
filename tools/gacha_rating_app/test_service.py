@@ -45,15 +45,17 @@ class ServiceTests(unittest.TestCase):
         self.assertIsNone(result['mean'])
         self.assertTrue(all(result['axes'][k]['score'] is not None for k in ('characterSix','up','limited','five')))
 
-    def test_config_exposes_the_version_returned_by_up_only_production_score(self):
+    def test_config_exposes_the_version_used_by_all_three_abc_axes(self):
         code, config = handler('GET', '/api/config')
         result = score_ledger(self.ledger)
         self.assertEqual(code, 200)
-        self.assertEqual(config['characterVersion'], result['character']['version'])
-        self.assertEqual(result['axes']['up']['details']['method'],
-                         'merged-wait-exact-dp-draw-weighted-up')
-        self.assertEqual(result['axes']['characterSix']['details']['method'],
-                         'ordinary80-total-six-count-dp-with-rush-convolution')
+        version = config['characterVersion']
+        self.assertEqual(version, 'character-abc-flat-v4-new-weight')
+        self.assertEqual(version, result['character']['version'])
+        for axis in ('characterSix', 'up', 'limited'):
+            with self.subTest(axis=axis):
+                self.assertEqual(result['axes'][axis]['details']['method'], version)
+                self.assertEqual(set(result['axes'][axis]['details']['groups']), {'A', 'B', 'C'})
 
     def test_legacy_hard_count_does_not_change_new_scores(self):
         self.ledger['weapon']={'N':60,'K6':2,'KU':1,'B':1,'H80':None}

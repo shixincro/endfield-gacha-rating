@@ -5,6 +5,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const production = require('./character_score');
+const {scoreCharacterFlatABC} = require('../character_abc_score/flat_score');
 const ledger = require('./character_ledger');
 const math = require('./character_result_math');
 const {extract} = require('./character_result_score');
@@ -28,17 +29,22 @@ const unscored = (r,axis='characterSix') => {
 };
 
 test('production exposes the new version while preserving frozen ledger export',()=>{
-  assert.equal(production.VERSION,'character-count-merged-up-v5-catalog-20261105');
+  assert.equal(production.VERSION,'character-abc-flat-v4-new-weight');
   assert.notEqual(production.VERSION,ledger.VERSION);
   const r=production.scoreCharacter(record([pool(0,10,[{at:10,character:'莱万汀'}])]));
   assert.equal(r.version,production.VERSION);axes.forEach(a=>scored(r,a));
 });
 
-test('complete ordinary six cycles with equal total wait have equal result scores',()=>{
-  const make=waits=>record([pool(0,100,[{at:waits[0],character:'莱万汀'},{at:100,character:'余烬'}])]);
-  const a=production.scoreCharacter(make([20,80])),b=production.scoreCharacter(make([50,50]));
-  near(scored(a),scored(b));
-  assert.equal(a.axes.characterSix.details.completeMainSix,2);
+test('complete history uses the candidate across all three axes',()=>{
+  const input=record([pool(0,100,[{at:20,character:'莱万汀'},{at:100,character:'余烬'}])]);
+  const result=production.scoreCharacter(input),candidate=scoreCharacterFlatABC(input);
+  for(const axis of axes){
+    near(scored(result,axis),scored(candidate,axis));
+    assert.deepEqual(result.axes[axis].details.groups,candidate.axes[axis].details.groups);
+  }
+  assert.deepEqual(result.actual,candidate.actual);
+  assert.equal(result.actual.A.six,1);
+  assert.equal(result.actual.B.six,1);
 });
 
 test('Minghe screenshot cycle carries 45 pity into 23 and 45, with five draws left',()=>{
@@ -71,9 +77,8 @@ test('forced120 is included in the actual six and limited counts',()=>{
     {at:70,character:'余烬'},{at:120,character:'莱万汀',forced:true},
   ])]));
   axes.forEach(a=>scored(r,a));
-  assert.equal(r.axes.characterSix.details.completeMainSix,2);
-  assert.equal(r.axes.characterSix.details.forcedIncluded,1);
-  assert.equal(r.axes.limited.details.mainLimitedWeight,1);
+  assert.deepEqual(r.actual.A,{draws:120,paid:110,six:2,up:1,limited:1});
+  for(const axis of axes)assert.deepEqual(r.axes[axis].details.groups.B,[]);
 });
 
 test('unfinished main-only six tail contributes its draw budget without a fictitious hit',()=>{
@@ -81,25 +86,31 @@ test('unfinished main-only six tail contributes its draw budget without a fictit
   axes.forEach(a=>scored(r,a));
   near(r.axes.characterSix.score,50*.992**20);
   assert.equal(r.coverage.unfinishedSixDraws,20);
-  assert.match(r.coverage.sixTailPolicy,/included/);
-  assert.equal(r.axes.up.details.unsuccessful[0].actual,20);
+  assert.equal(r.actual.A.draws,20);
+  assert.equal(r.actual.A.six,0);
+  assert.equal(r.axes.up.details.groups.A[0].kind,'A-unfinished');
 });
 
-test('adding an unfinished six tail lowers the same-count six score and remains UP evidence',()=>{
-  const a=production.scoreCharacter(record([pool(0,10,[{at:10,character:'莱万汀'}])]));
-  const b=production.scoreCharacter(record([pool(0,30,[{at:10,character:'莱万汀'}])]));
-  assert.ok(scored(b)<scored(a));
-  assert.equal(b.coverage.unfinishedSixDraws,20);
-  assert.equal(b.axes.up.details.unsuccessful[0].actual,20);
-  assert.ok(scored(b,'up')<scored(a,'up'));
+test('untransferred tail remains pending and moves to the next known pool A',()=>{
+  const first=pool(0,30,[{at:10,character:'莱万汀'}]);
+  const stop=production.scoreCharacter(record([pool(0,10,[{at:10,character:'莱万汀'}])]));
+  const pending=production.scoreCharacter(record([first]));
+  assert.deepEqual(pending.actual.pending,[{from:'pool-0',draws:20,paid:20}]);
+  for(const axis of axes)near(scored(pending,axis),scored(stop,axis));
+  const next=production.scoreCharacter(record([first,pool(1,10,[{at:10,character:'洁尔佩塔'}])]));
+  assert.deepEqual(next.actual.transfers,[{from:'pool-0',to:'pool-1',draws:20,paid:20}]);
+  assert.deepEqual(next.actual.pending,[]);
+  assert.equal(next.actual.A.draws,40);
 });
 
-test('only a used rush adds its ten draws to the six count distribution',()=>{
+test('only a used rush produces a C component',()=>{
   const unused=production.scoreCharacter(record([pool(0,30)]));
   const used=production.scoreCharacter(record([pool(0,30,[],{rushUsed:true,rushAt:30})]));
-  near(scored(unused),50*Math.pow(.992,30));near(scored(used),50*Math.pow(.992,40));
-  assert.equal(used.axes.characterSix.details.rush.draws,10);
-  assert.equal(used.axes.characterSix.details.completeMainSix,0);
+  assert.deepEqual(unused.axes.characterSix.details.groups.C,[]);
+  const {A,C}=used.axes.characterSix.details.groups;
+  near(A[0].score,50*.992**30);near(C[0].score,50*.992**10);
+  near(scored(used),(A[0].score*A[0].weight+C[0].score*C[0].weight)/(A[0].weight+C[0].weight));
+  assert.deepEqual(used.actual.C,{draws:10,paid:0,six:0,up:0,limited:0});
 });
 
 test('rush six and UP use aggregate counts and never reset main120',()=>{
@@ -107,19 +118,19 @@ test('rush six and UP use aggregate counts and never reset main120',()=>{
     {at:70,character:'余烬'},{at:120,character:'莱万汀',forced:true},
   ],{rushUsed:true,rushAt:30,rush:[{character:'莱万汀'}]})]));
   axes.forEach(a=>scored(r,a));
-  assert.equal(r.axes.characterSix.details.forcedIncluded,1);
-  assert.deepEqual(r.axes.characterSix.details.rush,{draws:10,six:1,up:1,limitedWeight:1});
-  assert.equal(r.axes.up.details.completed[0].deadline,120);
-  assert.equal(r.axes.up.details.components.completed.draws,120);
-  assert.equal(r.axes.up.details.totalDraws,130);
+  assert.equal(r.actual.A.draws,120);
+  assert.equal(r.actual.A.up,1);
+  assert.deepEqual(r.actual.C,{draws:10,paid:0,six:1,up:1,limited:1});
+  assert.deepEqual(r.axes.up.details.groups.B,[]);
 });
 
-test('same-rush repeated off NEW has one two-point hit then one ordinary hit',()=>{
+test('same-rush repeated off NEW adds one New event for two limited hits',()=>{
   const r=production.scoreCharacter(record([pool(0,30,[],{
     rushUsed:true,rushAt:30,rush:[{character:'伊冯'},{character:'伊冯'}],
   })]));
   scored(r,'limited');
-  assert.equal(r.axes.limited.details.rush.limitedWeight,3);
+  assert.equal(r.actual.C.limited,2);
+  assert.equal(r.axes.limited.details.newAdjustment.observed,1);
 });
 
 test('main trigger hit settles before rush for NEW ownership',()=>{
@@ -127,8 +138,9 @@ test('main trigger hit settles before rush for NEW ownership',()=>{
     rushUsed:true,rushAt:30,rush:[{character:'伊冯'}],
   })]));
   scored(r,'limited');
-  assert.equal(r.axes.limited.details.mainLimitedWeight,2);
-  assert.equal(r.axes.limited.details.rush.limitedWeight,1);
+  assert.equal(r.actual.A.limited,1);
+  assert.equal(r.actual.C.limited,1);
+  assert.equal(r.axes.limited.details.newAdjustment.observed,1);
 });
 
 test('a new banner resets120 while carrying incomplete ordinary six pity',()=>{
@@ -188,12 +200,28 @@ test('scoped issues remain scoped and malformed source events cannot manufacture
   for(const axis of axes)unscored(production.scoreCharacter(bad),axis);
 });
 
-test('potential tokens are not random six or UP output and do not change luck axes',()=>{
+test('confirmed 240 tokens count toward B UP but add no six or limited hit',()=>{
   const base=record([pool(0,240,[{at:60,character:'莱万汀'},{at:120,character:'余烬'},
-    {at:180,character:'余烬'},{at:240,character:'余烬'}])]);
+    {at:180,character:'余烬'},{at:230,character:'余烬'}])]);
   const other=structuredClone(base);other.pools[0].tokens=[{at:240}];
   const a=production.scoreCharacter(base),b=production.scoreCharacter(other);
-  for(const axis of axes)near(scored(a,axis),scored(b,axis));
+  axes.forEach(axis=>scored(b,axis));
+  assert.match(a.axes.up.details.flatABCFallbackReason,/信物/);
+  assert.equal(b.actual.byAxis.up.B.up,1);
+  assert.equal(b.actual.byAxis.up.B.draws,180);
+  assert.equal(b.axes.up.details.groups.B[0].details.pools[0].target,1);
+  for(const axis of ['characterSix','limited']){
+    assert.deepEqual(a.actual.byAxis[axis],b.actual.byAxis[axis]);
+    near(scored(a,axis),scored(b,axis));
+  }
+});
+
+test('unknown opening catalog preserves the base limited score without an invented New bonus',()=>{
+  const input=record([pool(0,30,[{at:10,character:'伊冯'},{at:20,character:'莱万汀'}])],{initialOwned:null});
+  const r=production.scoreCharacter(input);
+  near(scored(r,'limited'),r.axes.limited.details.baseScore);
+  assert.equal(r.axes.limited.details.newAdjustment.delta,0);
+  assert.match(r.axes.limited.details.newAdjustment.reason,/图鉴/);
 });
 
 test('five scorer and quota accounting are byte-equivalent to the frozen validation path',()=>{
@@ -203,6 +231,8 @@ test('five scorer and quota accounting are byte-equivalent to the frozen validat
   const input=record(pools),before=structuredClone(input);
   const actual=production.scoreCharacter(input),expected=ledger.scoreCharacter(input);
   assert.deepEqual(actual.axes.five,expected.axes.five);
+  assert.equal(actual.axes.five.details.input.F,18);
+  near(actual.axes.five.details.expectedFive,17.291614097921812);
   assert.deepEqual(input,before);
 });
 

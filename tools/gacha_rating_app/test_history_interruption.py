@@ -124,7 +124,10 @@ class InterruptionProjectionTests(unittest.TestCase):
         self.assertEqual(result['character']['counts'], baseline['character']['counts'])
         for key in ('characterSix', 'up'):
             self.assertNotEqual(result['axes'][key]['score'], baseline['axes'][key]['score'])
-        self.assertEqual(result['axes']['up']['details']['completed'][0]['initialPity'], 15)
+        self.assertEqual(result['character']['actual']['byAxis']['up'],
+                         baseline['character']['actual']['byAxis']['up'])
+        self.assertNotEqual(result['axes']['up']['details']['groups']['A'][0]['score'],
+                            baseline['axes']['up']['details']['groups']['A'][0]['score'])
         # A contradictory luck-only override must not suppress resource quotes.
         data['character']['interruptionCorrection']['resumeInfo']['8']['initialPity'] = 40
         result = score_ledger(revalidate_current_ledger(documents(), data))
@@ -134,11 +137,12 @@ class InterruptionProjectionTests(unittest.TestCase):
     def test_catalog_supplement_restores_ownership_without_becoming_a_hit(self):
         data = ledger([pool(6, 10, [(10, '弭弗')]), pool(8, 20, [(10, '卡缪')])])
         baseline = score_ledger(data)
-        self.assertEqual(baseline['planning']['pools'][1]['opportunity']['status'], 'partial')
+        expected_opportunity = baseline['planning']['pools'][1]['opportunity']
+        self.assertEqual(expected_opportunity['status'], 'ok')
         data['character']['interruptionCorrection']['resumeInfo'] = {
             '8': {'ownedSixStars': ['诀'], 'catalogComplete': False}}
         partial = score_ledger(data)
-        self.assertEqual(partial['planning']['pools'][1]['opportunity']['value'], 0)
+        self.assertEqual(partial['planning']['pools'][1]['opportunity'], expected_opportunity)
         self.assertEqual(partial['axes']['limited']['details']['identities'][-1]['weight'], 1)
         data['character']['interruptionCorrection']['resumeInfo']['8']['catalogComplete'] = True
         result = score_ledger(data)
@@ -152,12 +156,13 @@ class InterruptionProjectionTests(unittest.TestCase):
         retained = score_ledger(data)
         self.assertEqual(retained['axes']['limited']['details']['identities'][-1]['weight'], 1)
 
-    def test_full_catalog_makes_not_owned_target_quote_calculable(self):
+    def test_full_catalog_does_not_change_the_opportunity_quote(self):
         data = ledger([pool(6, 10, [(10, '弭弗')]), pool(8, 20)])
+        before = score_ledger(data)['planning']['pools'][1]['opportunity']
         data['character']['interruptionCorrection']['resumeInfo'] = {'8': {'catalogComplete': True}}
         result = score_ledger(data)
-        self.assertEqual(result['planning']['pools'][1]['opportunity']['status'], 'ok')
-        self.assertIsNotNone(result['planning']['pools'][1]['opportunity']['value'])
+        self.assertEqual(before['status'], 'ok')
+        self.assertEqual(result['planning']['pools'][1]['opportunity'], before)
 
     def test_resume_settings_are_strict_and_python_js_projections_agree(self):
         for info in (None, [], {'initialPity': True}, {'initialPity': -1}, {'initialPity': 80},
@@ -192,7 +197,10 @@ class InterruptionFlowTests(unittest.TestCase):
         self.assertEqual(fixed['character']['pools'][1]['initialPity'], 30)
         result = score_ledger(fixed)
         self.assertIsNotNone(result['axes']['up']['score'])
-        self.assertEqual(result['axes']['up']['details']['completed'][0]['actual'], 60)
+        self.assertEqual(result['character']['actual']['byAxis']['up']['A']['up'], 1)
+        completed = result['axes']['up']['details']['groups']['A'][0]['details']
+        self.assertEqual(completed['pools'], ['pool-8'])
+        self.assertEqual(completed['includedUnfinishedPools'], ['pool-6'])
         fixed['character']['interruptionCorrection']['excludedIndices'] = []
         restored = revalidate_current_ledger(documents(), fixed)
         self.assertTrue(any(i['code']=='six_wait_exceeds_80' for i in restored['character']['pools'][1]['issues']))

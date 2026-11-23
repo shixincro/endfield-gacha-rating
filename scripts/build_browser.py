@@ -12,7 +12,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 ROOT = Path(__file__).resolve().parents[1]
 CORE_FILES = {
     'gacha_rating_app':['importer.py','record_import.py','structured_export.py','service.py','planning.py',
-        'opportunity.py','hypothesis.py','history_interruption.py','weapon_scoring.py',
+        'opportunity.py','actual_loss.py','hypothesis.py','history_interruption.py','weapon_scoring.py',
         'water_values.json','character_up_reference.json','character_score.js'],
     'weapon_score_v2':['scorer.py','ten_pool_reference.py','potential_profile_score.py','average_inference.py'],
     'gacha_ocr_prototype':['recognize.py','avatar_locator.py','avatar_match.py','header_avatar.py','assets/manifest.json'],

@@ -54,7 +54,7 @@ class Element {
   showModal() {this.open = true;}
   close(value = '') {this.returnValue = value; this.open = false; this.dispatchEvent({type: 'close'});}
   focus() {this.focused = true;}
-  getBoundingClientRect() {return {left: 100, top: 100, right: 700, bottom: 600};}
+  getBoundingClientRect() {return {left:100,top:100,right:700,bottom:600,width:600,height:500};}
   remove() {if (this.parentNode) this.parentNode.children = this.parentNode.children.filter(c => c !== this);}
   contains(node) {return this === node || this.children.some(c => c.contains?.(node));}
   get firstChild() {return this.children[0] || null;}
@@ -94,7 +94,7 @@ function harness(config = {}) {
     getElementById: id => nodes[id] || null,
     createElement: tag => new Element(tag),
     createElementNS: (namespace, tag) => new Element(tag),
-    body: new Element('body'), activeElement: null,
+    body: new Element('body'), activeElement: null, documentElement:{clientWidth:1200,clientHeight:900},
     querySelector: selector => selector.startsWith('#') ? nodes[selector.slice(1)] || null : null,
     querySelectorAll: selector => [...new Set([...staticNodes.filter(n => n.matches(selector)),
       ...Object.values(nodes).flatMap(n => n.querySelectorAll(selector))])],
@@ -143,8 +143,10 @@ function record(id = 'A', pools = [pool()], weapon = {N: 60, K6: 2, KU: 1, B: 1,
   };
 }
 function scoredAxes(values = {}) {
-  return Object.fromEntries(['characterSix', 'up', 'limited', 'five', 'weaponSix', 'signature']
+  const axes=Object.fromEntries(['characterSix', 'up', 'limited', 'five', 'weaponSix', 'signature']
     .map(key => [key, {score: values[key] ?? 50, status: 'scored'}]));
+  axes.five.details={input:{F:9},expectedFive:9};
+  return axes;
 }
 function radarScore(root, label) {
   const text = root.querySelectorAll('text');
@@ -371,20 +373,20 @@ async function main() {
     saved.result.planning={pools:[{id:'p0',banner:'临渊望北',status:'ok',localLoss:0,
       total:70,idealStop:70,actual:{stop:70,pity:0},anchor:{at:70,source:'main',kind:'new-limited',character:'卡缪'},
       permanentDelta:0,waterValueDelta:0,rewardValueDelta:0,
-      opportunity:{status:'ok',value:16.32,message:'比较本池继续与换池',limitations:'局部首UP机会估值',
+      opportunity:{status:'ok',value:16.32,message:'比较本池继续与换池',limitations:'局部首UP机会亏损',
         stay:{paid:45.4,terminal:60,net:105.4},switch:{paid:60,terminal:61.72,net:121.72}}}]};
     h.ctx.loadSession(saved);await tick();
-    assert(h.nodes.planningHighlights.textContent.includes('自律狂人'));
-    assert(h.nodes.planningHighlights.textContent.includes('资源损耗'));
+    assert(h.nodes.planningTitle.textContent.includes('自律狂人'));
+    assert(h.nodes.planningHighlights.textContent.includes('期望亏损'));
     assert(h.nodes.planningHighlights.textContent.includes('0.00'));
-    assert(h.nodes.planningHighlights.textContent.includes('16.32'));
+    assert(h.nodes.planningOpportunity.textContent.includes('16.32'));
     assert(!h.nodes.planningHighlights.textContent.includes('不与A相加'));
     assert.equal(h.nodes.planningTopPools.querySelectorAll('button').length,0);
-    h.nodes.openAllPlanning.click();findButton(h.nodes.planning,'详情').click();
+    h.nodes.openAllPlanning.click();h.nodes.planning.querySelector('.planning-pool-link').click();
     assert(h.nodes.planningDetailDialog.open);
     const detail=h.nodes.planningDetailContent.textContent;
-    for(const text of ['New限定「卡缪」','机会估值 · 16.32'])assert(detail.includes(text));
-    for(const text of ['继续本池','换到下池','终态资源成本','比较本池继续与换池','局部首UP机会估值','不与A相加'])assert(!detail.includes(text));
+    for(const text of ['New限定「卡缪」','机会亏损 · 亏 16.32'])assert(detail.includes(text));
+    for(const text of ['继续本池','换到下池','终态资源成本','比较本池继续与换池','局部首UP机会亏损','不与A相加'])assert(!detail.includes(text));
     assert.equal(h.pending.length,0,'opening detail never reruns DP or OCR');
   });
   await test('partial A can have known B and open details without formatting null as zero',async()=>{
@@ -392,13 +394,99 @@ async function main() {
     saved.result.planning={pools:[{id:'p0',banner:'未知New',status:'partial',localLoss:null,
       warnings:['New未知'],opportunity:{status:'ok',value:5,message:'独立可算'}}]};
     h.ctx.loadSession(saved);await tick();
-    assert(h.nodes.planningHighlights.textContent.includes('5.00'));
+    assert(h.nodes.planningOpportunity.textContent.includes('5.00'));
     assert(h.nodes.planningHighlights.textContent.includes('数据不足'));
-    assert.equal(h.nodes.planningHighlights.querySelectorAll('.rating-title').length,0);
-    findButton(h.nodes.planning,'详情').click();
+    assert.equal(h.nodes.planningTitle.hidden,true);
+    h.nodes.planning.querySelector('.planning-pool-link').click();
     assert(h.nodes.planningDetailTitle.textContent.includes('数据不足'));
     assert(h.nodes.planningDetailContent.textContent.includes('New未知'));
     assert(h.nodes.planningDetailContent.textContent.includes('5.00'));
+  });
+  await test('actual loss details show the credit in the source pool with its settlement location', async()=>{
+    const h=harness();await tick();const saved=record();
+    saved.result.planning={pools:[{id:'p0',banner:'拳出无悔',status:'ok',localLoss:0,
+      opportunity:{status:'ok',value:0}}],
+      actualLoss:{total:-10,standardValue:15,partialPools:0,pools:[{id:'p0',value:-10,warnings:[],
+        settlements:[{at:40,type:'不应显示的原结算',value:0}],
+        attributedSettlements:[{at:37,type:'首 UP 自费差',value:-10,voucherCredit:10,
+          settledPoolId:'p1',settledBanner:'逐罪者'}]}]}};
+    h.ctx.loadSession(saved);await tick();
+    h.nodes.openAllPlanning.click();h.nodes.planning.querySelector('.planning-pool-link').click();
+    const detail=h.nodes.planningDetailContent.textContent;
+    assert(detail.includes('在「逐罪者」第 37 抽'));
+    assert(detail.includes('赠券抵 10.00 抽'));
+    assert(!detail.includes('不应显示的原结算'));
+  });
+  await test('actual loss shows settled zero with carried water and saves valuation only', async()=>{
+    const h=harness();await tick();const saved=record();
+    saved.result.planning={pools:[{id:'p0',banner:'临渊望北',status:'ok',localLoss:2,
+      opportunity:{status:'ok',value:7}}],
+      actualLoss:{total:0,standardValue:15,pending:true,partialPools:0,
+        pools:[{id:'p0',value:0,pending:true,tailWater:30,pendingPaid:10,warnings:[],settlements:[]}]}};
+    h.ctx.loadSession(saved);await tick();
+    const highlights=h.nodes.planningHighlights.textContent;
+    for(const text of ['期望亏损','实际亏损','机会亏损','0.00'])assert(highlights.includes(text));
+    h.nodes.openAllPlanning.click();h.nodes.planning.querySelector('.planning-pool-link').click();
+    assert.equal(h.nodes.planningDetailContent.querySelectorAll('input').length,0);
+    const detail=h.nodes.planningDetailContent.textContent;
+    assert(detail.includes('实际亏损 · 已结算 0.00 抽'));
+    assert(detail.includes('停手时留下 30 抽水位，10 抽永久投入随尾水带入后续卡池结算'));
+    escape(h.nodes.planningDetailDialog);
+    const input=h.nodes.planning.querySelectorAll('input').find(node=>node.type==='number');
+    assert.equal(input.value,'15');input.value='0';input.onchange();await tick();
+    const valuation=h.pending.filter(req=>req.url==='/api/score').at(-1);
+    assert.equal(valuation.body.session.ledger.character.actualLossStandardValue,0);
+    const updated=structuredClone(valuation.body.session);
+    updated.result.planning.actualLoss.standardValue=0;
+    valuation.resolve(updated);await tick();
+    assert.equal(h.nodes.planning.querySelectorAll('input').find(node=>node.type==='number').value,'0');
+  });
+  await test('planning cards put the opportunity total last and the largest pool below the list',async()=>{
+    const h=harness();await tick();const saved=record();
+    saved.result.planning={pools:[
+      {id:'p0',index:0,banner:'前池',status:'ok',localLoss:18,opportunity:{status:'ok',value:0}},
+      {id:'p1',index:2,banner:'机会池',status:'ok',localLoss:0,opportunity:{status:'ok',value:7}},
+      {id:'p2',index:1,banner:'收益池',status:'ok',localLoss:-2,opportunity:{status:'ok',value:5}},
+    ],actualLoss:{total:-10,standardValue:15,partialPools:1,pending:false,
+      pools:[{id:'p0',value:1,warnings:['加急时点未知']},{id:'p1',value:0},{id:'p2',value:-11}]}};
+    h.ctx.loadSession(saved);await tick();
+    const totals=h.nodes.planningHighlights.querySelector('.loss-overview');
+    assert.deepEqual(totals.querySelectorAll('dt').map(node=>node.textContent),['期望亏损','实际亏损','机会亏损']);
+    assert(totals.querySelector('.loss-metric-opportunity').textContent.includes('亏 12.00 抽'));
+    assert(h.nodes.planningHighlights.textContent.includes('前池数据不足'));
+    const compact=h.nodes.planningTopPools.querySelector('.pool-ledger');
+    assert.deepEqual(compact.querySelectorAll('button').map(node=>node.textContent),['前池','收益池']);
+    assert.equal(h.nodes.planningOpportunity.querySelectorAll('button').length,1);
+    assert.equal(h.nodes.planningOpportunity.querySelector('button').textContent,'机会池');
+    assert(h.nodes.planningOpportunity.textContent.includes('7.00 抽'));
+    assert(compact.querySelectorAll('.loss-negative').some(node=>node.textContent.includes('赚 11.00 抽')));
+    const pool=findButton(h.nodes.planningTopPools,'收益池'),preview=pool.parentNode.querySelector('.loss-popup');
+    pool.parentNode.onmouseenter();assert(!preview.hidden);assert(preview.textContent.includes('赚 11.00 抽'));
+    pool.parentNode.onmouseleave();assert(preview.hidden);
+    const all=h.nodes.planning.querySelector('.all-pool-ledger');
+    assert.deepEqual(all.querySelectorAll('button').map(node=>node.textContent),['前池','收益池','机会池']);
+    assert(h.nodes.planning.textContent.includes('按开池顺序 · 从早到晚'));
+    const breakdown=all.children.map(row=>row.querySelectorAll('.pool-loss-chip').map(chip=>chip.textContent));
+    assert.deepEqual(breakdown.map(chips=>chips.length),[2,3,3]);
+    assert.deepEqual(breakdown.slice(1).map(chips=>chips.at(-1)),['机会亏 5.00 抽','机会亏 7.00 抽']);
+    assert(!h.nodes.planning.querySelector('.max-opportunity-strip'));
+    assert(!h.nodes.planningTopPools.querySelector('table'));
+    assert(!h.nodes.luckTitle.hidden);
+    assert.notEqual(h.ctx.luckColor(92),h.ctx.luckColor(8));
+  });
+  await test('mouse previews close after the detail dialog restores focus to the pool name',async()=>{
+    const h=await loaded(),saved=h.state();
+    saved.result.planning={pools:[{id:'p0',banner:'熔火灼痕',status:'ok',localLoss:8}]};
+    h.ctx.loadSession(saved);h.nodes.openAllPlanning.click();
+    const pool=findButton(h.nodes.planning,'熔火灼痕'),box=pool.parentNode,preview=box.querySelector('.loss-popup');
+    pool.click();assert(h.nodes.planningDetailDialog.open);escape(h.nodes.planningDetailDialog);
+    pool.dispatchEvent({type:'focus'});
+    box.onmouseenter();assert(!preview.hidden);
+    box.onmouseleave();assert(preview.hidden);
+    const matches=pool.matches.bind(pool);
+    pool.matches=selector=>selector===':focus-visible'||matches(selector);
+    pool.dispatchEvent({type:'focus'});assert(!preview.hidden);
+    pool.dispatchEvent({type:'blur'});assert(preview.hidden);
   });
   await test('main page keeps planning left, luck right, and all editing inside results tabs', async () => {
     const h = await loaded();
@@ -417,13 +505,13 @@ async function main() {
       assert(h.nodes[id]); assert.equal(h.nodes[id].open, false, id + ' must remain closed on load');
     }
   });
-  await test('top five losses stay compact and reveal their detail only after clicking', async () => {
+  await test('expected losses fill five places when no actual extremes are available or they overlap', async () => {
     const h = harness(); await tick(); const saved = record();
     saved.result.planning = {pools: Array.from({length: 6}, (_, i) => ({id: 'p' + i,
       banner: '规划卡池' + i, status: 'ok', localLoss: (i + 1) * 10, total: 60,
       idealStop: 20, actual: {stop: 60}, permanentDelta: (i + 1) * 10, waterValueDelta: 0, rewardValueDelta: 0}))};
     h.ctx.loadSession(saved); await tick();
-    const details = h.nodes.planningTopPools.querySelectorAll('button').filter(n => n.textContent === '详情');
+    const details = h.nodes.planningTopPools.querySelectorAll('.planning-pool-link');
     assert.equal(details.length, 5); assert.equal(h.nodes.planningTopPools.querySelectorAll('details').length, 0);
     assert(h.nodes.planningTopPools.textContent.includes('规划卡池5'));
     assert(!h.nodes.planningTopPools.textContent.includes('规划卡池0'));
@@ -439,6 +527,13 @@ async function main() {
     assert(h.nodes.planning.textContent.includes('规划卡池5'));
     assert(h.nodes.planning.textContent.includes('210.00'));
     escape(h.nodes.planningAllDialog); assert(!h.nodes.planningAllDialog.open);
+
+    saved.result.planning.actualLoss={total:10,pools:[
+      {id:'p0',value:-7},{id:'p5',value:17}
+    ]};
+    h.ctx.loadSession(saved);await tick();
+    assert.deepEqual(h.nodes.planningTopPools.querySelectorAll('.planning-pool-link').map(n=>n.textContent),
+      ['规划卡池5','规划卡池4','规划卡池3','规划卡池0','规划卡池2']);
   });
   await test('planning summary is compact and the all-results action belongs to the loss ranking header', async () => {
     const h = harness(); await tick(); const saved = record();
@@ -446,8 +541,8 @@ async function main() {
       total: 60, idealStop: 50, actual: {stop: 60}, permanentDelta: 10, waterValueDelta: 0, rewardValueDelta: 0}]};
     h.ctx.loadSession(saved); await tick();
     assert.equal(h.nodes.planningBreakdown.hidden, false);
-    assert(h.nodes.planningHighlights.textContent.includes('自律狂人'));
-    assert(h.nodes.planningHighlights.textContent.includes('资源损耗'));
+    assert(h.nodes.planningTitle.textContent.includes('自律狂人'));
+    assert(h.nodes.planningHighlights.textContent.includes('期望亏损'));
     assert(h.nodes.planningHighlights.textContent.includes('10.00'));
     assert(!h.nodes.planningHighlights.textContent.includes('熔火灼痕'), 'ranking must be separate from summary typography');
     assert.equal(h.nodes.planningHighlights.querySelectorAll('button').length, 0);
@@ -457,8 +552,7 @@ async function main() {
     }
     const header = html.match(/<div\b[^>]*id="planningRankHeader"[^>]*>([\s\S]*?)<\/div>/);
     assert(header, 'the ranking has a stable header container');
-    assert(header[1].includes('亏损最多'));
-    assert(header[1].includes('TOP 5'));
+    assert(header[1].includes('卡池亏损'));
     assert(header[1].includes('id="openAllPlanning"'), 'view all must share the ranking header rather than float below the panel');
     assert(!html.includes('直接累计亏损抽数，越低越好。'));
     assert(!html.includes('最后UP／信物为停点，46—59补60'));
@@ -486,12 +580,12 @@ async function main() {
       {id: 'p1', banner: '缺项卡池', status: 'partial', localLoss: null},
     ], warnings: [{code: 'missing_water', severity: 'warning', message: '缺项卡池的期初水位缺失'}]};
     h.ctx.loadSession(saved); await tick();
-    assert(h.nodes.planningHighlights.textContent.includes('资源损耗'));
+    assert(h.nodes.planningHighlights.textContent.includes('期望亏损'));
     assert(h.nodes.planningHighlights.textContent.includes('已算 1/2 池'));
     assert(h.nodes.planningHighlights.textContent.includes('数据不完整'));
-    assert.equal(h.nodes.planningHighlights.querySelectorAll('.rating-title').length, 0);
+    assert.equal(h.nodes.planningTitle.hidden, true);
     assert(h.nodes.planning.textContent.includes('缺项卡池的期初水位缺失'));
-    assert(h.nodes.planning.textContent.includes('部分合计'));
+    assert(h.nodes.planning.textContent.includes('已算 1/2 池 · 数据不完整'));
   });
   await test('unavailable planning totals are not presented as zero draws or awarded a title', async () => {
     const h = harness(); await tick(); const saved = record();
@@ -502,7 +596,7 @@ async function main() {
     assert(!h.nodes.planningHighlights.textContent.includes('0.00'));
     assert.equal(h.nodes.planningHighlights.querySelectorAll('.planning-score-unit').length, 0);
     assert.equal(h.nodes.planningHighlights.querySelectorAll('.is-unavailable').length, 2);
-    assert.equal(h.nodes.planningHighlights.querySelectorAll('.rating-title').length, 0);
+    assert.equal(h.nodes.planningTitle.hidden, true);
     assert.equal(h.nodes.planningTopPools.querySelectorAll('button').length, 0);
   });
   await test('early free-stop details distinguish missing water valuation from actual future pulls', async () => {
@@ -514,7 +608,7 @@ async function main() {
       actual: {stop: 5, pity: 5}, reference: {stop: 10, pity: 10, pityIsValuation: true},
       referencePitySource: 'early-stop-water-extension', reason, localLoss: 1.25,
       permanentDelta: 0, waterValueDelta: -1.25, rewardValueDelta: 0}]};
-    h.ctx.loadSession(saved); await tick(); findButton(h.nodes.planningTopPools, '详情').click();
+    h.ctx.loadSession(saved); await tick(); h.nodes.planningTopPools.querySelector('.planning-pool-link').click();
     assert(h.nodes.planningDetailDialog.open);
     const detail = h.nodes.planningDetailContent.textContent;
     assert(detail.includes('少积累水位')); assert(detail.includes('5 抽水位'));
@@ -531,7 +625,7 @@ async function main() {
       referencePitySource: 'early-stop-water-extension',
       reason: '提前停手按永久抽、水位与60节点赠券的净差估值，并非实际补抽结果。',
       localLoss: 6.25, permanentDelta: -5, waterValueDelta: -1.25, rewardValueDelta: -10}]};
-    h.ctx.loadSession(saved); await tick(); findButton(h.nodes.planningTopPools, '详情').click();
+    h.ctx.loadSession(saved); await tick(); h.nodes.planningTopPools.querySelector('.planning-pool-link').click();
     const detail = h.nodes.planningDetailContent.textContent;
     assert(detail.includes('55 / 60 抽')); assert(detail.includes('少积累水位'));
     assert(detail.includes('永久抽、水位与60节点赠券的净差估值'));
@@ -549,7 +643,7 @@ async function main() {
       total:20,idealStop:20,freeAllowance:20,localLoss:0,stopRule:'complete-free-allowance',
       anchor:{at:5,source:'main'},actual:{stop:20,pity:15},reference:{stop:20,pity:15},
       permanentDelta:0,waterValueDelta:0,rewardValueDelta:0,opportunity:{status:'ok',value:0}}]};
-    h.ctx.loadSession(saved);await tick();findButton(h.nodes.planning,'详情').click();
+    h.ctx.loadSession(saved);await tick();h.nodes.planning.querySelector('.planning-pool-link').click();
     const text=h.nodes.planningDetailContent.textContent;
     assert(text.includes('第5抽'));assert(text.includes('用完本池20抽免费额度'));
     assert(text.includes('20 / 20 抽'));
@@ -720,7 +814,7 @@ async function main() {
     saved.result.planning.pools.push({id: 'p1', banner: '待确认池', status: 'partial', localLoss: null});
     h.ctx.loadSession(saved); await tick();
     assert(h.nodes.planningHighlights.textContent.includes('已算 1/2 池 · 数据不完整'));
-    assert.equal(h.nodes.planningHighlights.querySelectorAll('.rating-title').length, 0,
+    assert.equal(h.nodes.planningTitle.hidden, true,
       'partial loss must not get a complete planning title');
   });
   await test('planning details include the exact saved pool crop without requesting new OCR', async () => {
@@ -728,11 +822,36 @@ async function main() {
     const saved = record('planning-image', [pool({evidence: {crop, sourceImage: '/data/fixture/source.png'}})]);
     saved.result.planning = {pools: [{id: 'p0', banner: '熔火灼痕', status: 'ok', localLoss: 10,
       total: 60, idealStop: 50, actual: {stop: 60}, permanentDelta: 10, waterValueDelta: 0, rewardValueDelta: 0}]};
-    h.ctx.loadSession(saved); await tick(); findButton(h.nodes.planningTopPools, '详情').click();
+    h.ctx.loadSession(saved); await tick(); h.nodes.planningTopPools.querySelector('.planning-pool-link').click();
     assert(h.nodes.planningDetailDialog.open);
     const image = h.nodes.planningDetailContent.querySelector('img'); assert(image); assert.equal(image.src, crop);
     assert.equal(h.pending.length, 0); assert.equal(h.requests.filter(r => r.url === '/api/import').length, 0);
   });
+  await test('character radar hover displays the requested phases, expected yields and signed New delta',async()=>{
+    const h=harness(),s=record();
+    s.result.axes=scoredAxes();
+    s.result.axes.characterSix.details={weight:3,groups:{A:[{score:60,weight:1},{score:75,weight:2}],B:[],C:[]}};
+    s.result.axes.up.details={groups:{A:[{score:70,weight:1}],B:[{score:45,weight:2}],C:[{score:55,weight:1}]}};
+    s.result.axes.limited={status:'scored',score:48.75,details:{groups:{},baseScore:50,newAdjustment:{delta:-1.25}}};
+    s.result.axes.five.details={input:{F:10},expectedFive:9.25};
+    h.ctx.fixture=s;
+    h.read('loadSession(fixture)');
+    const radar=h.nodes.radar,preview=radar.querySelector('#characterAxisPreview');
+    const expectRows=(name,rows)=>{
+      const trigger=radar.querySelectorAll('g').find(element=>element.getAttribute('aria-label')===name+'评分明细');
+      trigger.onmouseenter();
+      assert.equal(preview.hidden,false);
+      assert.deepEqual(preview.children.slice(1).map(line=>line.children.map(cell=>cell.textContent)),rows);
+      trigger.onmouseleave();
+      assert.equal(preview.hidden,true);
+    };
+    expectRows('角色六星',[['大保底区','70.0 分'],['无大保底区','—'],['加急','—'],['期望产量','3.00 个']]);
+    expectRows('当期UP',[['大保底区','70.0 分'],['无大保底区','45.0 分'],['加急','55.0 分']]);
+    expectRows('限定',[['大保底区','—'],['无大保底区','—'],['加急','—'],['无 New 加成总分','50.0 分'],['New','-1.25 分']]);
+    expectRows('角色五星',[['欧非分数','50.0 分'],['期望产量','9.25 个']]);
+    assert.equal(radarScore(radar,'角色五星'),'多 0.8 个');
+  });
+
   await test('missing or invalid five-star data does not suppress the five-axis title or remove its radar axis', async () => {
     const h = harness(); await tick();
     for (const missing of [undefined, null, {score: null, status: 'invalid'}, {score: 'bad', status: 'invalid'}]) {
@@ -745,23 +864,26 @@ async function main() {
       assert.equal(radarScore(h.nodes.radar, '角色五星'), '—');
       assert.equal(h.nodes.radar.querySelectorAll('circle').length, 5);
       assert.equal(h.nodes.radar.querySelectorAll('text').filter(n => n.textContent === '角色五星').length, 1);
-      assert(h.nodes.luckContent.classList.contains('concealed'));
-      h.nodes.revealLuck.click(); assert(!h.nodes.luckContent.classList.contains('concealed'));
-      assert.equal(h.nodes.luckTitle.textContent, '歪中藏金·百兵来朝');
+      assert(!h.nodes.radar.hidden);
+      assert(!h.nodes.luckTitle.hidden);
     }
     assert.equal(h.pending.length, 0, 'presentation-only title rendering must not score or recognize again');
   });
-  await test('changing only the five-star score changes the radar but never the title or other scores', async () => {
+  await test('the five-star axis labels the count difference while its point follows the score', async () => {
     const h = harness(); await tick(); const saved = record('five-star-independent');
     saved.result.axes = scoredAxes({characterSix: 80, up: 20, limited: 20, five: 0, weaponSix: 50, signature: 80});
     const expectedOtherAxes = Object.fromEntries(Object.entries(saved.result.axes).filter(([key]) => key !== 'five'));
-    for (const score of [0, 10, 30, 50, 70, 90, 100]) {
+    for (const [score,actual,label] of [[10,6,'少 3.2 个'],[50,9,'0.0 个'],[90,12,'多 2.8 个']]) {
       saved.result.axes.five.score = score;
+      saved.result.axes.five.details={input:{F:actual},expectedFive:score===50?9.04:9.2};
       h.ctx.loadSession(saved); await tick();
       assert.equal(h.nodes.luckTitle.textContent, '常驻收藏家·专武眷顾');
-      assert.equal(radarScore(h.nodes.radar, '角色五星'), score.toFixed(1));
+      assert.equal(radarScore(h.nodes.radar, '角色五星'), label);
       assert.deepEqual(Object.fromEntries(Object.entries(h.state().result.axes).filter(([key]) => key !== 'five')), expectedOtherAxes);
       assert.equal(h.nodes.radar.querySelectorAll('circle').length, 6);
+      const point=h.nodes.radar.querySelectorAll('circle')[3];
+      const origin=h.nodes.radar.querySelector('line'), centerY=Number(origin.getAttribute('y1'));
+      assert.equal(Number(point.getAttribute('cy')),centerY+score*(Number(origin.getAttribute('y1'))-Number(origin.getAttribute('y2')))/100);
     }
     assert.equal(h.pending.length, 0);
   });
@@ -776,7 +898,7 @@ async function main() {
         assert.equal(h.nodes.luckTitle.textContent, '数据不足', key + ' must participate');
         assert.equal(h.nodes.radar.querySelectorAll('circle').length, 5);
         assert.equal(h.nodes.radar.querySelectorAll('text').filter(n => n.textContent === '—').length, 1);
-        assert.equal(radarScore(h.nodes.radar, '角色五星'), '50.0');
+        assert.equal(radarScore(h.nodes.radar, '角色五星'), '0.0 个');
       }
     }
     assert.equal(h.pending.length, 0);
@@ -808,8 +930,7 @@ async function main() {
       saved.result.axes = scoredAxes({characterSix: character, up: character, limited: character, weaponSix: weapon, signature: weapon});
       h.ctx.loadSession(saved); await tick();
       assert.equal(h.nodes.luckTitle.textContent, expected);
-      assert(h.nodes.luckContent.classList.contains('concealed'));
-      h.nodes.revealLuck.click(); assert.equal(h.nodes.luckTitle.textContent, expected);
+      assert(!h.nodes.luckTitle.hidden);
       assert.equal(h.nodes.exportRadar.disabled, false);
     }
   });
@@ -821,28 +942,24 @@ async function main() {
       saved.result.axes.five.score = value >= 70 ? 0 : 100;
       h.ctx.loadSession(saved); await tick();
       assert.equal(h.nodes.luckTitle.textContent, expected);
-      assert.equal(radarScore(h.nodes.radar, '角色五星'), value >= 70 ? '0.0' : '100.0');
+      assert.equal(radarScore(h.nodes.radar, '角色五星'), '0.0 个');
     }
   });
-  await test('luck is concealed after every result, reveal unlocks export, recalculation conceals it again', async () => {
-    const h = harness(); await tick(); const saved = record('conceal');
+  await test('scores and export are ready without a reveal action after loading or recalculating', async () => {
+    const h = harness(); await tick(); const saved = record('visible-scores');
     saved.result.axes = Object.fromEntries(['characterSix', 'up', 'limited', 'five', 'weaponSix', 'signature'].map(k => [k, {score: 75}]));
     saved.result.scoredAxes = 6; h.ctx.loadSession(saved); await tick();
-    assert.equal(h.nodes.luckTitle.textContent, '宗师级欧皇');
-    const concealed = () => {
-      assert(h.nodes.luckContent.classList.contains('concealed'));
-      assert.equal(h.nodes.luckContent.inert, true); assert.equal(h.nodes.luckContent.getAttribute('aria-hidden'), 'true');
-      assert.equal(h.nodes.revealLuck.hidden, false); assert.equal(h.nodes.exportRadar.disabled, true);
+    assert(!h.nodes.revealLuck);
+    const visible = () => {
+      assert.equal(h.nodes.luckTitle.textContent, '宗师级欧皇');
+      assert(!h.nodes.luckTitle.hidden);assert(!h.nodes.radar.hidden);assert(!h.nodes.exportRadar.disabled);
     };
-    concealed(); h.nodes.revealLuck.click();
-    assert(!h.nodes.luckContent.classList.contains('concealed')); assert.equal(h.nodes.luckContent.inert, false);
-    assert.notEqual(h.nodes.luckContent.getAttribute('aria-hidden'), 'true');
-    assert.equal(h.nodes.revealLuck.hidden, true); assert.equal(h.nodes.exportRadar.disabled, false);
+    visible();
     h.nodes.openResults.click(); setField(h.nodes.review, '武库配额', 5180); h.nodes.resultsApply.click();
-    h.flushTimers(); await tick(); assert.equal(h.nodes.exportRadar.disabled, true);
-    assert.equal(h.pending.length, 1); h.pending[0].resolve(h.pending[0].body.session); await tick(); concealed();
-    h.nodes.revealLuck.click(); assert.equal(h.nodes.exportRadar.disabled, false);
-    h.ctx.loadSession({...h.state(), id: 'different-record'}); await tick(); concealed();
+    h.flushTimers(); await tick();
+    assert(h.nodes.radar.hidden);assert(h.nodes.luckTitle.hidden);assert(h.nodes.exportRadar.disabled);
+    assert.equal(h.pending.length, 1); h.pending[0].resolve(h.pending[0].body.session); await tick(); visible();
+    h.ctx.loadSession({...h.state(), id: 'different-record'}); await tick(); visible();
   });
   await test('switching records discards open character draft', async () => {
     const h = await loaded(); h.nodes.openResults.click(); setField(h.nodes.review, '武库配额', 5180);
@@ -1014,6 +1131,21 @@ async function main() {
     assert.equal(h.pending.length,1,'current character version must converge without repeated scoring');
     assert.equal(h.read('validateEditedPool(session.ledger.character.pools[0])'),'');
   });
+  await test('opening history backfills a missing five-star expectation once',async()=>{
+    const version='current-character',h=harness({characterVersion:version});await tick();
+    const saved=record('five-star-expectation-cache');
+    saved.result.character={version};
+    saved.result.axes=scoredAxes();
+    delete saved.result.axes.five.details.expectedFive;
+    h.ctx.loadSession(saved);await tick();
+    assert.equal(h.pending.length,1);
+    const response=structuredClone(h.pending[0].body.session);
+    response.result.axes.five.details.expectedFive=9.3;
+    h.pending[0].resolve(response);await tick();
+    h.ctx.loadSession(h.state());await tick();
+    assert.equal(h.pending.length,1);
+    assert.equal(radarScore(h.nodes.radar,'角色五星'),'少 0.3 个');
+  });
   await test('newly confirmed rush use finishes status after score-time default migration', async () => {
     const h = harness(); await tick();
     h.ctx.loadSession(record('queue-new-rush', [erroneousPool('first', 0, {rushUsed: null, rushAt: null})]), {reviewImport: true}); await tick();
@@ -1181,7 +1313,7 @@ async function main() {
     h.pending[0].reject(Error('测试请求失败'));assert.equal(await loading,false);await tick();
     assert.equal(h.state().recognitionVersion,undefined);assert.equal(h.state().ledger.issues.length,1);
     assert.equal(h.nodes.resultsDialog.open,false);assert(h.nodes.error.textContent.includes('测试请求失败'));
-    assert.equal(h.nodes.radarRevealArea.hidden,true);
+    assert.equal(h.nodes.radar.hidden,true);
   });
   await test('weapon route version invalidates cached scores once independently of engine version',async()=>{
     const weaponVersion='weapon-result-profile-average-v1-20261019';
@@ -1190,7 +1322,7 @@ async function main() {
       if(oldVersion!==undefined)saved.result.weaponVersion=oldVersion;
       saved.result.weapon={version:weaponVersion};
       const loading=h.ctx.loadSession(saved);await tick();
-      assert.equal(h.pending.length,1);assert.equal(h.nodes.radarRevealArea.hidden,true);
+      assert.equal(h.pending.length,1);assert.equal(h.nodes.radar.hidden,true);
       const response=structuredClone(h.pending[0].body.session);response.result.weaponVersion=weaponVersion;
       response.result.weapon.version='specific-engine-version';h.pending[0].resolve(response);await loading;await tick();
       h.ctx.loadSession(h.state());await tick();assert.equal(h.pending.length,1);
@@ -1226,8 +1358,8 @@ async function main() {
     h.pending[0].resolve(response); await loading; await tick();
     assert.equal(h.nodes.planningBreakdown.hidden, false);
     assert(h.nodes.planningHighlights.textContent.includes('1.25'));
-    assert(!h.nodes.planningHighlights.querySelectorAll('.planning-score')[0].textContent.includes('数据不完整'));
-    assert(h.nodes.planningHighlights.textContent.includes('资源损耗'));
+    assert(!h.nodes.planningHighlights.querySelector('.loss-metric').textContent.includes('数据不完整'));
+    assert(h.nodes.planningHighlights.textContent.includes('期望亏损'));
     assert.deepEqual(h.state().result.axes, saved.result.axes, 'planning migration must preserve the server-provided luck axes');
     assert.equal(h.state().result.planning.pools[0].status, 'ok');
   });
@@ -2146,8 +2278,8 @@ async function main() {
     const h=await loaded(),saved=record('hyp-last',[pool({id:'later',index:2,initialPity:10,banner:'末池'}),pool()]);
     saved.result.planning={pools:[{id:'p0',banner:'首池',status:'ok',localLoss:100},{id:'later',banner:'末池',status:'ok',localLoss:0}]};
     h.ctx.loadSession(saved);assert(h.nodes.scoringScenario.hidden);assert(!h.nodes.scoringScenario.querySelector('input'));
-    findButton(h.nodes.planningTopPools,'详情').click();assert(h.nodes.scoringScenario.hidden);escape(h.nodes.planningDetailDialog);
-    h.nodes.openAllPlanning.click();const lastRow=h.nodes.planning.querySelectorAll('tr').find(row=>row.children[0]?.textContent==='末池');findButton(lastRow,'详情').click();
+    h.nodes.planningTopPools.querySelector('.planning-pool-link').click();assert(h.nodes.scoringScenario.hidden);escape(h.nodes.planningDetailDialog);
+    h.nodes.openAllPlanning.click();findButton(h.nodes.planning,'末池').click();
     assert(!h.nodes.scoringScenario.hidden);assert(h.nodes.scoringScenario.querySelector('input'));assert(h.nodes.planningDetailTitle.textContent.includes('末池'));
     escape(h.nodes.planningDetailDialog);h.ctx.openPlanningDetail(saved.result.planning.pools[0]);assert(h.nodes.scoringScenario.hidden);assert(!h.nodes.scoringScenario.querySelector('input'));
     h.ctx.openPlanningDetail(saved.result.planning.pools[1]);assert(!h.nodes.scoringScenario.hidden);assert(!h.nodes.scoringScenario.querySelector('input').checked);
@@ -2182,16 +2314,19 @@ async function main() {
     picker.value='骏卫';picker.onchange();const previewing=h.nodes.hypothesisPreview.click();await tick();const request=h.pending.find(item=>item.url==='/api/hypothesis/preview');
     assert.deepEqual(request.body.choices,{'80':'骏卫'});assert.equal(request.body.additionalFive,null);
     request.resolve({before:hypothesisScore(),after:{...hypothesisScore(60,25),hypothesis:true},notices:[]});await previewing;
-    const text=h.nodes.hypothesisComparison.textContent;assert(text.includes('角色六星'));assert(text.includes('当期UP'));assert(text.includes('限定'));assert(text.includes('资源损耗'));assert(text.includes('机会估值'));
-    const rows=h.nodes.hypothesisComparison.querySelectorAll('tr');assert(!rows.some(row=>row.children[0]?.textContent==='角色五星'));assert(text.includes('本次不比较角色五星评分'));
+    const text=h.nodes.hypothesisComparison.textContent;assert(text.includes('角色六星'));assert(text.includes('当期UP'));assert(text.includes('限定'));assert(text.includes('期望亏损'));assert(text.includes('机会亏损'));
+    const rows=h.nodes.hypothesisComparison.querySelectorAll('tr');assert(!rows.some(row=>row.children[0]?.textContent==='角色五星'));assert(text.includes('本次不比较五星数量差额'));
     assert.deepEqual(h.state(),saved);assert.equal(h.read('JSON.stringify(characterDraft)'),draft);assert.equal(h.requests.filter(item=>item.url==='/api/score').length,0);
   });
   await test('optional five star input survives a pending plan and enables only an explicit five star comparison',async()=>{
     const {h,plan}=await hypothesisHarness(),input=findField(h.nodes.hypothesisControls,'新增五星数');
     input.value='0';input.oninput();plan.resolve({plan:hypothesisPlan({events:[]}),notices:[]});await tick();assert(!h.nodes.hypothesisPreview.disabled);
     const previewing=h.nodes.hypothesisPreview.click();await tick();const request=h.pending.find(item=>item.url==='/api/hypothesis/preview');assert.equal(request.body.additionalFive,0);
-    request.resolve({before:hypothesisScore(),after:hypothesisScore(55),notices:[]});await previewing;
-    assert(h.nodes.hypothesisComparison.querySelectorAll('tr').some(row=>row.children[0]?.textContent==='角色五星'));
+    const before=hypothesisScore(),after=hypothesisScore(55);
+    after.axes.five.details.expectedFive=12.4;
+    request.resolve({before,after,notices:[]});await previewing;
+    const row=h.nodes.hypothesisComparison.querySelectorAll('tr').find(row=>row.children[0]?.textContent==='角色五星');
+    assert.deepEqual(row.children.map(cell=>cell.textContent),['角色五星','0.0 个','少 3.4 个','少 3.4 个']);
     assert.equal(findField(h.nodes.hypothesisControls,'新增五星数'),input);assert.equal(input.value,'0');
   });
   await test('hypothesis input invalidates pending previews so obsolete results do not appear',async()=>{
@@ -2306,7 +2441,7 @@ async function main() {
     saved.result.planning={pools:[{id:'p0',banner:'熔火灼痕',status:'ok',localLoss:170.56,countedLoss:170.56,planningExempt:false,exemptedLoss:0,
       permanentDelta:180,waterValueDelta:9.44,rewardValueDelta:0,opportunity:{status:'ok',value:12},...extra}]};
     if(extra.planningExempt)saved.ledger.character.pools[0].planningExempt=true;
-    h.ctx.loadSession(saved);h.nodes.revealLuck.click();h.ctx.openPlanningDetail(h.state().result.planning.pools[0]);return h;
+    h.ctx.loadSession(saved);h.ctx.openPlanningDetail(h.state().result.planning.pools[0]);return h;
   };
   const exemptionChoice=h=>findField(h.nodes.planningExemption,'豁免此项亏损');
   const toggleExemption=(h,checked)=>{const input=exemptionChoice(h);input.checked=checked;return input.onchange();};
@@ -2325,34 +2460,34 @@ async function main() {
     const request=h.pending.find(p=>p.url==='/api/score');assert.equal(request.body.session.reviewed,true);assert.equal(request.body.session.revision,2);
     assert.equal(request.body.session.ledger.character.pools[0].planningExempt,true);
     await finishExemption(h);await saving;
-    assert(h.nodes.planningHighlights.textContent.includes('自律狂人'));assert(h.nodes.planningHighlights.textContent.includes('0.00'));
+    assert(h.nodes.planningTitle.textContent.includes('自律狂人'));assert(h.nodes.planningHighlights.textContent.includes('0.00'));
     assert.equal(h.nodes.planningTopPools.querySelectorAll('button').length,0);assert(h.nodes.planning.textContent.includes('已豁免'));
-    assert(h.nodes.planningDetailTitle.textContent.includes('资源损耗 0.00 抽'));assert(!exemptionChoice(h).disabled);
-    assert(h.nodes.planningDetailDialog.open);assert.equal(h.read('luckRevealed'),true);assert.deepEqual(h.state().result.axes,before.result.axes);
+    assert(h.nodes.planningDetailTitle.textContent.includes('期望亏损 0.00 抽'));assert(!exemptionChoice(h).disabled);
+    assert(h.nodes.planningDetailDialog.open);assert(!h.nodes.radar.hidden);assert.deepEqual(h.state().result.axes,before.result.axes);
     assert.equal(h.state().result.planning.pools[0].opportunity.value,12);assert.equal(h.state().reviewed,true);
   });
   await test('an exempted pool remains available in the full list and can be restored repeatedly',async()=>{
     const h=await exemptionHarness();toggleExemption(h,true);await tick();await finishExemption(h);escape(h.nodes.planningDetailDialog);
-    h.nodes.openAllPlanning.click();findButton(h.nodes.planning,'详情').click();assert(exemptionChoice(h).checked);
+    h.nodes.openAllPlanning.click();h.nodes.planning.querySelector('.planning-pool-link').click();assert(exemptionChoice(h).checked);
     toggleExemption(h,false);await tick();await finishExemption(h);
     assert.equal(h.state().revision,3);assert.equal(h.state().ledger.character.pools[0].planningExempt,false);
-    assert(h.nodes.planningHighlights.textContent.includes('上头豪客'));assert.equal(h.nodes.planningTopPools.querySelectorAll('button').length,1);
+    assert(h.nodes.planningTitle.textContent.includes('上头豪客'));assert.equal(h.nodes.planningTopPools.querySelectorAll('button').length,1);
     assert(!h.nodes.planning.textContent.includes('已豁免'));assert(!exemptionChoice(h).checked);
   });
   await test('failed exemption restores the checkbox and saved result and allows retry without double posting',async()=>{
     const h=await exemptionHarness(),before=h.state(),saving=toggleExemption(h,true);await tick();
-    h.ctx.setPlanningExemption('p0',false);assert.equal(h.requests.filter(p=>p.url==='/api/score').length,1);
+    h.ctx.setPlanningSetting('p0','planningExempt',false);assert.equal(h.requests.filter(p=>p.url==='/api/score').length,1);
     assert(h.nodes.save.disabled);assert(h.nodes.resultsApply.disabled);assert(h.nodes.restore.disabled);assert(h.nodes.weaponConfigured.disabled);
     h.pending.find(p=>p.url==='/api/score').reject(Error('测试写入失败'));await saving;
     assert.deepEqual(h.state(),before);assert(!exemptionChoice(h).checked);assert(!exemptionChoice(h).disabled);
     assert(h.nodes.planningDetailContent.textContent.includes('测试写入失败'));assert(h.nodes.planningHighlights.textContent.includes('170.56'));
-    assert.equal(h.read('luckRevealed'),true);assert(!h.nodes.save.disabled);assert(!h.nodes.resultsApply.disabled);
+    assert(!h.nodes.radar.hidden);assert(!h.nodes.save.disabled);assert(!h.nodes.resultsApply.disabled);
     toggleExemption(h,true);await tick();assert.equal(h.requests.filter(p=>p.url==='/api/score').length,2);await finishExemption(h);
   });
   for(const sameId of [false,true])await test('late exemption response does not replace '+(sameId?'reopened same':'another')+' record',async()=>{
     const h=await exemptionHarness(),saving=toggleExemption(h,true);await tick();h.ctx.loadSession(record(sameId?'exemption':'new-exemption'));
     const before=h.state();await finishExemption(h);await saving;assert.deepEqual(h.state(),before);assert(!h.nodes.planningDetailDialog.open);
-    assert.equal(h.read('planningExemptionRequest'),null);assert(!h.nodes.restore.disabled);
+    assert.equal(h.read('planningSettingRequest'),null);assert(!h.nodes.restore.disabled);
   });
   await test('exemption save preserves unrelated draft input and keeps the editor current for its next save',async()=>{
     const h=await exemptionHarness();h.nodes.openResults.click();setField(h.nodes.review,'武库配额',5010);
@@ -2372,7 +2507,7 @@ async function main() {
   }
   await test('closing loss details during save never reopens them when the response completes',async()=>{
     const h=await exemptionHarness();toggleExemption(h,true);await tick();escape(h.nodes.planningDetailDialog);await finishExemption(h);
-    assert(!h.nodes.planningDetailDialog.open);assert(h.nodes.planningHighlights.textContent.includes('自律狂人'));
+    assert(!h.nodes.planningDetailDialog.open);assert(h.nodes.planningTitle.textContent.includes('自律狂人'));
   });
   await test('loss exemption is a compact title-right checkbox without the old explanatory panel',async()=>{
     const h=await exemptionHarness();assert.equal(h.nodes.planningExemption.textContent,'豁免此项亏损');assert.equal(h.nodes.planningExemption.querySelectorAll('input').length,1);
@@ -2416,7 +2551,7 @@ async function main() {
     const {h}=await readyHypothesis();setField(h.nodes.hypothesisChoices,'第80抽','骏卫');enableScenario(h);await tick();await finishScenario(h);return h;
   };
   await test('enabling hypothesis requires choices then saves only settings and updates every homepage score',async()=>{
-    const {h,saved,draft}=await readyHypothesis();h.nodes.revealLuck.click();const revealed=h.read('luckRevealed');
+    const {h,saved,draft}=await readyHypothesis();
     enableScenario(h);assert(h.nodes.hypothesisError.textContent.includes('请选择第80抽'));assert(!h.nodes.hypothesisEnabled.checked);assert.equal(h.requests.filter(p=>p.url==='/api/score').length,0);
     setField(h.nodes.hypothesisChoices,'第80抽','骏卫');const saving=enableScenario(h);await tick();assert(h.nodes.hypothesisEnabled.disabled);assert(h.nodes.resultsApply.disabled);
     const request=h.pending.find(p=>p.url==='/api/score');assert.equal(request.body.session.ledger.character.pools[0].quota,5000);assert.equal(request.body.session.revision,2);assert.equal(request.body.session.reviewed,true);
@@ -2426,7 +2561,7 @@ async function main() {
     assert.equal(h.state().result.axes.characterSix.score,72);assert.equal(radarScore(h.nodes.radar,'角色六星'),'72.0');assert.equal(radarScore(h.nodes.radar,'角色五星'),'—');
     assert(h.nodes.planningHighlights.textContent.includes('77.00'));assert(h.nodes.scoringScenario.textContent.includes('当前显示：假设评分'));
     assert(h.nodes.scoringScenario.textContent.includes('新增五星未填写'));assert(h.nodes.radar.textContent.includes('假设补到保底 · 非实际抽卡结果'));
-    assert(!h.nodes.resultDetails);assert(h.state().result.scoringScenario.enabled);assert.equal(h.read('luckRevealed'),revealed);
+    assert(!h.nodes.resultDetails);assert(h.state().result.scoringScenario.enabled);assert(!h.nodes.radar.hidden);
     assert(h.nodes.hypothesisEnabled.checked);assert(!h.nodes.hypothesisEnabled.disabled);assert(h.nodes.hypothesisDialog.open);
   });
   await test('last pool detail cancellation restores actual scores and clears the SVG label without changing actual ledger',async()=>{
@@ -2444,7 +2579,7 @@ async function main() {
     assert(h.nodes.hypothesisEnabled.checked);assert.equal(findField(h.nodes.hypothesisChoices,'第80抽').value,'骏卫');assert(h.nodes.hypothesisApply.hidden);
     setField(h.nodes.hypothesisControls,'新增五星数',6);assert(!h.nodes.hypothesisApply.hidden);assert(h.nodes.hypothesisApplyHint.textContent.includes('上次已保存'));
     h.nodes.hypothesisApply.click();await tick();assert.equal(h.pending.filter(p=>p.url==='/api/score').at(-1).body.session.scoringScenario.additionalFive,6);await finishScenario(h);
-    assert.equal(h.state().scoringScenario.additionalFive,6);assert.equal(radarScore(h.nodes.radar,'角色五星'),'75.0');assert(h.nodes.hypothesisApply.hidden);
+    assert.equal(h.state().scoringScenario.additionalFive,6);assert.equal(h.state().result.axes.five.score,75);assert.equal(radarScore(h.nodes.radar,'角色五星'),'0.0 个');assert(h.nodes.hypothesisApply.hidden);
   });
   await test('failed hypothesis setting save rolls back checkbox and retains the original result and draft',async()=>{
     const {h,saved,draft}=await readyHypothesis();setField(h.nodes.hypothesisChoices,'第80抽','骏卫');const saving=enableScenario(h);await tick();
@@ -2486,7 +2621,7 @@ async function main() {
   await test('hypothetical planning details clearly separate actual evidence from assumed new events',async()=>{
     const h=await activeScenarioHarness();h.ctx.openPlanningDetail(h.state().result.planning.pools[0]);const text=h.nodes.planningDetailContent.textContent;
     assert(text.includes('实际主池出货：第50抽 骏卫'));assert(text.includes('假设新增 60 抽'));assert(text.includes('第80抽 骏卫'));assert(text.includes('第120抽 莱万汀'));
-    assert(text.includes('资源损耗按假设补抽后的结果计算'));
+    assert(text.includes('期望亏损按假设补抽后的结果计算'));
     toggleExemption(h,true);await tick();assert.equal(h.pending.filter(p=>p.url==='/api/score').at(-1).body.session.scoringScenario.enabled,true);
     await finishExemption(h);assert.equal(h.state().scoringScenario.enabled,true);assert.equal(h.state().ledger.character.pools[0].total,60);
   });
@@ -2512,8 +2647,8 @@ async function main() {
   });
   await test('weapon navigation guards unavailable data and in-flight writes even when invoked directly',async()=>{
     const h=await loaded();h.read('historyDeleting=true');h.nodes.weaponConfigured.onclick();assert(!h.nodes.resultsDialog.open);
-    h.read('historyDeleting=false;planningExemptionRequest={id:session.id}');h.nodes.weaponConfigured.onclick();assert(!h.nodes.resultsDialog.open);
-    h.read('planningExemptionRequest=null');h.ctx.loadSession(record('without-weapon',[pool()],null));h.nodes.weaponConfigured.onclick();
+    h.read('historyDeleting=false;planningSettingRequest={id:session.id}');h.nodes.weaponConfigured.onclick();assert(!h.nodes.resultsDialog.open);
+    h.read('planningSettingRequest=null');h.ctx.loadSession(record('without-weapon',[pool()],null));h.nodes.weaponConfigured.onclick();
     assert(h.nodes.weaponConfigured.disabled);assert(!h.nodes.resultsDialog.open);assert.equal(h.requests.filter(request=>request.url==='/api/score').length,0);
   });
   await test('completed global notices remain visible for three seconds then fade and hide',async()=>{
@@ -2563,10 +2698,10 @@ async function main() {
     assert(!html.includes('>导出雷达图</button>'));assert.equal((html.match(/id="exportRadar"/g)||[]).length,1);
     assert(html.includes('id="resultCapture"'));assert(header.includes('>保存记录JSON</button>'));
     const css=fs.readFileSync(path.join(staticDir,'style.css'),'utf8');
-    assert.match(css,/\.result-grid\.result-snapshot-layout\{width:1440px;grid-template-columns:minmax\(340px,\.78fr\) minmax\(0,1\.22fr\)/);
+    assert.match(css,/\.result-grid\.result-snapshot-layout\{width:1440px;grid-template-columns:var\(--report-columns\)/);
   });
   const clipboardHarness=async()=>{
-    const h=await loaded(),writes=[];h.nodes.revealLuck.click();
+    const h=await loaded(),writes=[];
     h.ctx.navigator={clipboard:{write:async items=>{writes.push(items);await items[0].values['image/png'];}}};
     h.ctx.ClipboardItem=class{constructor(values){this.values=values;}};
     h.ctx.resultSnapshot=()=>({width:1440,height:800});
@@ -2584,9 +2719,9 @@ async function main() {
     assert(h.nodes.status.textContent.includes('结果图片已复制到剪贴板'));assert.equal(h.nodes.exportRadar.textContent,'保存结果');
     assert(!h.nodes.exportRadar.disabled);assert.deepEqual(h.state(),before);
   });
-  await test('concealed scores and pending edits cannot copy a result',async()=>{
-    const {h,writes}=await clipboardHarness();h.ctx.setLuckRevealed(false);await h.nodes.exportRadar.onclick();assert.equal(writes.length,0);
-    h.ctx.setLuckRevealed(true);h.read('planningExemptionRequest={};');await h.nodes.exportRadar.onclick();assert.equal(writes.length,0);
+  await test('stale scores and pending edits cannot copy a result',async()=>{
+    const {h,writes}=await clipboardHarness();h.ctx.markStale();await h.nodes.exportRadar.onclick();assert.equal(writes.length,0);
+    h.ctx.renderResults();h.read('planningSettingRequest={};');await h.nodes.exportRadar.onclick();assert.equal(writes.length,0);
   });
   await test('clipboard rejection displays an error and restores the result button',async()=>{
     const {h}=await clipboardHarness();h.ctx.navigator.clipboard.write=async()=>{throw Object.assign(Error('denied'),{name:'NotAllowedError'});};
@@ -2596,8 +2731,9 @@ async function main() {
   await test('a changed record cancels the pending PNG instead of copying stale scores',async()=>{
     const {h}=await clipboardHarness();let finish;
     h.ctx.resultSnapshotPNG=(capture,stillCurrent)=>new Promise((resolve,reject)=>{finish=()=>stillCurrent()?resolve(new Blob(['png'])):reject(Error('评分结果已变化，请重新点击保存结果。'));});
-    const action=h.nodes.exportRadar.click();h.ctx.loadSession(record('different-record'));finish();await action;
-    assert(h.nodes.error.textContent.includes('评分结果已变化'));assert(h.nodes.exportRadar.disabled);
+    const action=h.nodes.exportRadar.click();h.ctx.loadSession(record('different-record'));assert(h.nodes.exportRadar.disabled);
+    finish();await action;
+    assert(h.nodes.error.textContent.includes('评分结果已变化'));assert(!h.nodes.exportRadar.disabled);
   });
   const interruptedRecord=()=>record('interrupted',[
     pool({total:30,tail:30,events:[],rushUsed:false,rushAt:null,quota:600}),

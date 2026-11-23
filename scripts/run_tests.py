@@ -30,6 +30,7 @@ def main():
     run([sys.executable,'-X','utf8','-m','unittest','discover','-s','scripts','-p','test_*.py'])
     run([sys.executable,'-X','utf8','browser/tests/python_bridge_test.py'])
     run([node,'--test','browser/tests/weapon.test.mjs'])
+    run([node,'--test','browser/tests/api-dispatch.test.cjs'])
     if args.ocr:
         run([sys.executable,'-X','utf8','scripts/check_environment.py'])
         run([sys.executable,'-X','utf8','-m','unittest','discover','-s','tools/gacha_ocr_prototype','-p','test_*.py'])

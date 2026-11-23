@@ -25,23 +25,18 @@
 <p id="interruptionNotice" class="interruption-notice" role="status" hidden></p>
 <div class="result-grid" id="resultCapture">
   <section class="panel planning-score-panel">
-    <h2>规划亏损</h2>
+    <div class="section-head result-panel-heading"><h2>规划亏损</h2><p id="planningTitle" class="rating-title" hidden></p></div>
     <div id="planningHighlights" class="planning-highlights" aria-live="polite"></div>
     <div id="planningBreakdown" class="planning-breakdown" hidden>
-      <div id="planningRankHeader" class="planning-rank-header"><h3>亏损最多 <span>TOP 5</span></h3><button id="openAllPlanning" class="view-all-planning" type="button" aria-haspopup="dialog" aria-controls="planningAllDialog">查看全部</button></div>
+      <div id="planningRankHeader" class="planning-rank-header"><h3>卡池亏损</h3><button id="openAllPlanning" class="view-all-planning" type="button" aria-haspopup="dialog" aria-controls="planningAllDialog">查看全部</button></div>
       <div id="planningTopPools" class="planning-top-list"></div>
+      <div id="planningOpportunity"></div>
     </div>
   </section>
   <section class="panel radar-panel">
-    <div class="section-head"><h2>六维欧非</h2></div>
+    <div class="section-head result-panel-heading"><h2>六维欧非</h2><p id="luckTitle" class="rating-title luck-title" hidden></p></div>
     <div id="calculating" role="status" aria-live="polite" hidden>正在计算…</div>
-    <div id="radarRevealArea" class="radar-reveal-area is-concealed">
-      <div id="luckContent" class="luck-content concealed" aria-hidden="true" inert>
-        <h3 id="luckTitle" class="rating-title luck-title"></h3>
-        <div id="radar"></div>
-      </div>
-      <button id="revealLuck" class="reveal-luck primary" type="button">显示欧非评价</button>
-    </div>
+    <div id="radar" hidden></div>
   </section>
 </div>
 <dialog id="resultsDialog" class="review-dialog results-dialog" aria-labelledby="resultsDialogTitle">

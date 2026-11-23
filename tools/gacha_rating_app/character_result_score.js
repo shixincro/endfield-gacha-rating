@@ -181,7 +181,7 @@ function countSegments(record) {
   return {segments,excludedMainDraws};
 }
 
-function scoreResults(record,validated,catalog) {
+function scoreResults(record,validated,catalog,{flat,fallback}={}) {
   if(!record || !Array.isArray(record.pools) || !validated.counts)return validated;
   const result={...validated,axes:{...validated.axes},warnings:[...(validated.warnings||[])]};
   // Legacy gates remain authoritative for input conflicts, not for the absence
@@ -209,10 +209,25 @@ function scoreResults(record,validated,catalog) {
   const common={reference:'fixed-observed-record-model-not-universal-player-percentile',
     rush:{draws:data.rushDraws,six:data.rushSix,up:data.rushUp,limitedWeight:data.rushWeight},
     unfinishedSixCycles:data.tails,excludedOpeningSegments:data.excluded};
+  const flatAxes=[];
+  const compatibleAxes=[];
   const run=(axis,fn)=>{
     if(gate(axis)){result.axes[axis]=gate(axis);return;}
+    const candidate=flat?.axes[axis];
+    // The flat New model has one opening catalog. Preserve legacy ownership
+    // evidence for independent history ranges and explicit catalog supplements.
+    const needsCatalogCompatibility=axis==='limited'&&limitedCompatibility;
+    if(candidate?.status==='scored'&&!needsCatalogCompatibility){
+      result.axes[axis]={...candidate,details:{...candidate.details,method:flat.version,
+        excludedOpeningSegments:data.excluded}};
+      flatAxes.push(axis);
+      return;
+    }
     try {result.axes[axis]=fn();}
     catch(error){result.axes[axis]=failed(`角色分布计算失败：${error.message}`,common);}
+    const reason=candidate?.reason??fallback??(needsCatalogCompatibility?'图鉴跨中断或缺池，沿用可确认的图鉴区间':null);
+    if(reason)result.axes[axis].details={...result.axes[axis].details,flatABCFallbackReason:reason};
+    compatibleAxes.push(axis);
   };
   run('characterSix',()=>{
     const spans=countSegments(record);
@@ -256,8 +271,9 @@ function scoreResults(record,validated,catalog) {
         reference,actual:value.actual,limitedCount:value.L,offNew:value.B,includeNew:value.includeNew,
         tailPolicy:'included-in-draw-budget',schedule:value.schedule}};
   });
+  if(flatAxes.length)result.actual=flat.actual;
   result.coverage={...validated.coverage,unfinishedSixDraws:data.tails.reduce((n,s)=>n+s.draws,0),
-    sixTailPolicy:'included-in-total-draw-budget-without-inventing-a-six',
+    sixTailPolicy:flatAxes.includes('characterSix')?'abc-attributed-or-pending':'included-in-total-draw-budget-without-inventing-a-six',
     limitedPartialHistoryCompatibility:!!result.axes.limited.details?.partialHistoryCompatibility};
   result.effectiveCounts={mainSix:data.six.length,forcedSixIncluded:data.six.filter(s=>s.forced).length,
     mainUp:data.actualMainUp,rushSix:data.rushSix,rushUp:data.rushUp,
@@ -265,8 +281,7 @@ function scoreResults(record,validated,catalog) {
   result.segments=[...data.six.map(({entries,...s})=>({...s,kind:'complete-six-cycle'})),
     ...data.tails.map(s=>({...s,kind:'unfinished-six-cycle'}))];
   result.warnings=result.warnings.filter(w=>!w.startsWith('期初水位未知：六星等待评分跳过'));
-  result.warnings.push('六星/限定使用普通80保底的总产出DP参照；实际120收益计入产出，信物不计随机出货');
-  result.warnings.push('UP合并跨池等待，以实际结束池确定保底位置；已出、未出和加急按全部可确认抽数加权，不使用离线样本分位');
+  if(compatibleAxes.length)result.warnings.push('部分角色轴使用旧账本兼容参照。');
   result.warnings.push('各轴是指定参照下的模型评分，不保证不同停手策略均分相同，也不是所有真实玩家的排名');
   if(validated.coverage.excludedMainDraws)result.warnings.push(`期初水位未知：${validated.coverage.excludedMainDraws}抽开头不计六星/UP等待参照；不补造水位或抽数`);
   if(result.coverage.limitedPartialHistoryCompatibility)result.warnings.push('限定轴因期初水位未知、中间缺池或中断修正，采用部分记录兼容DP；保留已知身份证据，不猜前史，其尾段仍按兼容口径处理');
