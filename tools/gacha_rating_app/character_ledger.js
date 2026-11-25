@@ -4,8 +4,8 @@
 // Production first-three scores are replaced by character_result_score.js.
 const {BASELINE, scoreFive, normalCDF, VERSION: FIVE_VERSION} = require('../character_five_score/scorer');
 const VERSION = 'character-ledger-v1-20261015-si-catalog';
-const LIMITED = Object.freeze(['莱万汀','洁尔佩塔','伊冯','汤汤','洛茜','庄方宜','弭弗','卡缪','诀','梨诺','提弗洛斯','祀','明河']);
-const BANNERS = Object.freeze(['熔火灼痕','轻飘飘的信使','热烈色彩','河流的女儿','狼珀','春雷动，万物生','拳出无悔','逐罪者','临渊望北','晨星于此闪耀','冬猎','万物更新','烟火邀星河']);
+const LIMITED = Object.freeze(['莱万汀','洁尔佩塔','伊冯','汤汤','洛茜','庄方宜','弭弗','卡缪','诀','梨诺','提弗洛斯','祀','明河','小刻']);
+const BANNERS = Object.freeze(['熔火灼痕','轻飘飘的信使','热烈色彩','河流的女儿','狼珀','春雷动，万物生','拳出无悔','逐罪者','临渊望北','晨星于此闪耀','冬猎','万物更新','烟火邀星河','锻砧、行囊与蜜糖']);
 const COMMON = Object.freeze(['骏卫','黎风','别礼','余烬','艾尔黛拉']);
 const AXES = ['characterSix','up','limited','five'];
 const characterName = x => x === '俊卫' ? '骏卫' : x;

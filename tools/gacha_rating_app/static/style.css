@@ -185,7 +185,14 @@ button.danger{color:#a63c32;border-color:#d1a099}button.danger:hover{background:
 .results-tabs{flex-wrap:wrap}
 @media(max-width:480px){.results-tabs [role=tab]{padding:9px 6px;white-space:nowrap}}
 
-.weapon-config-table{width:100%;table-layout:fixed;margin:8px 0}.weapon-config-table td{padding:6px 10px;vertical-align:top}.weapon-config-table .field{margin:0}.weapon-config-table input{width:100%;min-width:0}
+.weapon-output-config{margin:14px 0}
+.weapon-output-config h3{margin:12px 0 6px;font-size:15px}
+.weapon-output-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(128px,100%),1fr));gap:8px 12px}
+.review-dialog .weapon-output-grid input[type=number],.review-dialog .weapon-overflow-grid input[type=number]{width:100%;min-width:0}
+.weapon-output-grid output{display:block;min-height:35px;padding:4px 7px;border:1px solid var(--line);border-radius:4px;background:#f4f7f2;color:var(--ink);font-size:15px}
+.weapon-overflow-action{align-items:center;gap:10px;margin:12px 0}
+.weapon-overflow-dialog{max-width:500px}
+.weapon-overflow-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(142px,100%),1fr));gap:8px 12px;margin-top:12px}
 
 .empty-rush[aria-pressed=true]{border-color:var(--green);color:var(--green);background:#eaf2e2}
 

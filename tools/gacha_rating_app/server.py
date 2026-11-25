@@ -517,41 +517,34 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200,result)
             if path=='/api/import':
                 files=data.get('files')
-                if not isinstance(files,list) or not 1<=len(files)<=12:
-                    raise ValueError('每批选择1—12张小黑盒截图，每张图片按一人独立建档。')
+                if not isinstance(files,list) or len(files)!=1:
+                    raise ValueError('一次只能导入一张截图。')
                 with LOCK:
                     if any(j['status']=='running' for j in JOBS.values()):
                         return self.send(409,{'error':'已有识别任务正在运行，请等待完成。'})
-                decoded=[]
+                entry=files[0]
+                name=str(entry.get('name',''))[:200] if isinstance(entry,dict) else ''
+                if Path(name).suffix.lower() not in ('.png','.jpg','.jpeg','.webp'):
+                    raise ValueError('仅支持PNG、JPG、WebP截图。')
+                try:
+                    blob=base64.b64decode(entry['data'],validate=True)
+                except (KeyError,TypeError,ValueError):
+                    raise ValueError('无法读取图片，请检查文件是否损坏或重新导出。') from None
+                if len(blob)>25*1024*1024:
+                    raise ValueError('单张截图不能超过25 MB。')
                 from PIL import Image
-                for entry in files:
-                    name=str(entry.get('name',''))[:200] if isinstance(entry,dict) else '无效文件'
-                    try:
-                        if Path(name).suffix.lower() not in ('.png','.jpg','.jpeg','.webp'):
-                            raise ValueError('仅支持PNG、JPG、WebP截图。')
-                        try:
-                            blob=base64.b64decode(entry['data'],validate=True)
-                        except (KeyError,TypeError,ValueError):
-                            raise ValueError('无法读取图片，请检查文件是否损坏或重新导出。') from None
-                        if len(blob)>25*1024*1024:
-                            raise ValueError('单张截图不能超过25 MB。')
-                        size_error='截图尺寸不受支持，请使用原始长截图（至多6500万像素）。'
-                        try:
-                            with Image.open(io.BytesIO(blob)) as im:
-                                valid_size=im.width>=200 and im.height>=400 and im.width*im.height<=65_000_000
-                                if valid_size:
-                                    im.verify()
-                        except Image.DecompressionBombError:
-                            raise ValueError(size_error) from None
-                        except (OSError,SyntaxError,ValueError):
-                            raise ValueError('无法读取图片，请检查文件是否损坏或重新导出。') from None
-                        if not valid_size:
-                            raise ValueError(size_error)
-                        decoded.append({'name':name,'blob':blob})
-                    except Exception as exc:
-                        if len(files)==1:
-                            raise
-                        decoded.append({'name':name,'error':str(exc)[:1000]})
+                size_error='截图尺寸不受支持，请使用原始长截图（至多6500万像素）。'
+                try:
+                    with Image.open(io.BytesIO(blob)) as im:
+                        valid_size=im.width>=200 and im.height>=400 and im.width*im.height<=65_000_000
+                        if valid_size:
+                            im.verify()
+                except Image.DecompressionBombError:
+                    raise ValueError(size_error) from None
+                except (OSError,SyntaxError,ValueError):
+                    raise ValueError('无法读取图片，请检查文件是否损坏或重新导出。') from None
+                if not valid_size:
+                    raise ValueError(size_error)
                 job_id=uuid.uuid4().hex
                 with LOCK:
                     # Validation above can take time. Reserve the worker under
@@ -559,10 +552,10 @@ class Handler(BaseHTTPRequestHandler):
                     if any(j['status']=='running' for j in JOBS.values()):
                         return self.send(409,{'error':'已有识别任务正在运行，请等待完成。'})
                     JOBS[job_id]={'id':job_id,'status':'running','message':'正在初始化识别',
-                                  'completed':0,'total':len(files),'items':[],'sessions':[],
+                                  'completed':0,'total':1,'items':[],'sessions':[],
                                   'succeeded':0,'failed':0}
                     try:
-                        WORKER.submit(recognize_job,job_id,decoded)
+                        WORKER.submit(recognize_job,job_id,[{'name':name,'blob':blob}])
                     except Exception:
                         JOBS.pop(job_id,None)
                         raise

@@ -64,6 +64,20 @@ test('Minghe screenshot cycle carries 45 pity into 23 and 45, with five draws le
   unscored(production.scoreCharacter(record([invalid])),'limited');
 });
 
+test('Xiaoke launch banner keeps a rush UP separate from an empty main pool',()=>{
+  const index=BANNERS.indexOf('锻砧、行囊与蜜糖'),edit=require('./static/character-edit');
+  assert.equal(index,13);
+  assert.equal(LIMITED[index],'小刻');
+  const banner=pool(index,30,[],{initialPity:10,tail:40,freeAllowance:10,rushUsed:true,
+    rushAt:30,rush:[{character:'小刻',source:'rush'}],quota:3860});
+  assert.deepEqual(edit.candidates(banner),['小刻','明河','祀',...ledger.COMMON]);
+  const result=production.scoreCharacter(record([banner],{initialPity:10}));
+  for(const axis of [...axes,'five'])scored(result,axis);
+  assert.deepEqual(result.actual.A,{draws:30,paid:20,six:0,up:0,limited:0});
+  assert.deepEqual(result.actual.C,{draws:10,paid:0,six:1,up:1,limited:1});
+  assert.equal(result.counts.endPity,40);
+});
+
 test('Minghe limited ownership DP counts the new thirteenth bit alongside both off-banner identities',()=>{
   const {distributionForSchedule}=require('./character_limited_count');
   const options={initialPity:79,initialOwned:['祀'],includeNew:true,maxValue:2};

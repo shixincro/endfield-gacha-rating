@@ -172,21 +172,27 @@
     return value;
   }
 
-  function tableProfile(config) {
-    const fail = message => ({errors:[message]});
-    if (!config || typeof config !== 'object' || Array.isArray(config)) return fail('潜能配置格式无效。');
-    const {totalTypes,counts,overflowCopies=0} = config;
-    if (!integer(totalTypes) || totalTypes < 1 || totalTypes > 30) return fail('总专武种类须为1至30的整数。');
-    if (!Array.isArray(counts) || counts.length !== 5 || !counts.every(n=>integer(n)&&n<=30)) return fail('1至5潜专武数量须为0至30的整数。');
-    if (counts.reduce((sum,n)=>sum+n,0) > totalTypes) return fail('各潜能数量之和不能超过总专武种类。');
-    if (!integer(overflowCopies) || overflowCopies > 30000) return fail('溢出专武数量须为0至30000的整数。');
-    const full = counts[4], allocation = config.overflowByType;
-    if (overflowCopies && !full) return fail('有溢出时至少需要一把5潜专武。');
-    if (full > 1 && overflowCopies && allocation == null) return fail('请分别填写各把5潜专武的溢出份数。');
+  function weaponOverflowError({counts,overflowCopies=0,overflowByType:allocation}) {
+    if (!integer(overflowCopies) || overflowCopies > 30000) return '溢出总份数须为0至30000的整数。';
+    const full = counts[4];
+    if (overflowCopies && (!integer(full) || full < 1 || full > 30)) return '有溢出时，至少需要一池产出 6 份及以上。';
+    if (full > 1 && overflowCopies && allocation == null) return '请填写各池的溢出份数。';
     if (allocation != null && (!Array.isArray(allocation) || allocation.length !== full ||
         !allocation.every(n=>integer(n)&&n<=overflowCopies) || allocation.reduce((sum,n)=>sum+n,0)!==overflowCopies)) {
-      return fail('各把5潜专武的溢出份数之和须等于溢出专武数量。');
+      return '各池溢出份数之和须等于溢出总份数。';
     }
+    return '';
+  }
+
+  function tableProfile(config) {
+    const fail = message => ({errors:[message]});
+    if (!config || typeof config !== 'object' || Array.isArray(config)) return fail('专武产出配置格式无效。');
+    const {totalTypes,counts,overflowCopies=0} = config;
+    if (!integer(totalTypes) || totalTypes < 1 || totalTypes > 30) return fail('有专武产出池数须为1至30的整数。');
+    if (!Array.isArray(counts) || counts.length !== 5 || !counts.every(n=>integer(n)&&n<=30)) return fail('各档产出的池数须为0至30的整数。');
+    if (counts.reduce((sum,n)=>sum+n,0) > totalTypes) return fail('各档产出的池数之和不能超过有专武产出池数。');
+    const overflowError = weaponOverflowError(config);
+    if (overflowError) return fail(overflowError);
     const copies = totalTypes + counts.reduce((sum,n,i)=>sum+(i+1)*n,0) + overflowCopies;
     return {types:totalTypes, copies, errors:[]};
   }
@@ -211,11 +217,11 @@
     }
     const parsed = w.potentialConfig != null ? tableProfile(w.potentialConfig) : parseWeaponProfile(w.profile);
     errors.push(...parsed.errors);
-    if (requireProfile && !hasWeaponProfile(w)) errors.push('请填写潜能配置。');
+    if (requireProfile && !hasWeaponProfile(w)) errors.push('请填写专武产出配置。');
     if (!parsed.errors.length && hasWeaponProfile(w) && validUp) {
-      if (parsed.copies < w.KU) errors.push('潜能配置的专武总份数不能少于原始当期专武数。');
-      if (parsed.types > w.KU) errors.push('总专武种类不能超过原始当期专武数。');
-      if (validN && parsed.copies-w.KU > (w.N<180?0:1+Math.floor((w.N-180)/160))) errors.push('潜能配置推算的赠品数超过当前抽数可到达的赠品节点。');
+      if (parsed.copies < w.KU) errors.push('配置的专武总份数不能少于原始当期专武数。');
+      if (parsed.types > w.KU) errors.push('有专武产出池数不能超过原始当期专武数。');
+      if (validN && parsed.copies-w.KU > (w.N<180?0:1+Math.floor((w.N-180)/160))) errors.push('专武产出配置推算的赠品数超过当前抽数可到达的赠品节点。');
     }
     return errors;
   }
@@ -237,5 +243,5 @@
       Object.hasOwn(saved,key)?saved[key]:null));
   }
 
-  return Object.freeze({planningCountedLoss, planningOverview, planningOpportunityOverview, planningTitle, luckTitle, parseWeaponProfile, weaponConfigForForm, hasWeaponProfile, weaponForSave, validateWeapon, makeWeaponConfirmation, isWeaponConfirmed});
+  return Object.freeze({planningCountedLoss, planningOverview, planningOpportunityOverview, planningTitle, luckTitle, parseWeaponProfile, weaponConfigForForm, hasWeaponProfile, weaponForSave, weaponOverflowError, validateWeapon, makeWeaponConfirmation, isWeaponConfirmed});
 });

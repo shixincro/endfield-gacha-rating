@@ -288,7 +288,7 @@ test('explicit individual-draw records preserve non-ten totals in both modes',()
   assert.ok(validateWeapon({...w,allowIndividualDraws:false}).some(e=>e.includes('10的倍数')));
 });
 test('profile correction requires explicit configuration and never infers it from B/H80', () => {
-  assert.ok(validateWeapon(weapon({B:10,H80:0}),{requireProfile:true}).some(e=>e.includes('请填写潜能配置')));
+  assert.ok(validateWeapon(weapon({B:10,H80:0}),{requireProfile:true}).some(e=>e.includes('请填写专武产出配置')));
   assert.deepEqual(makeWeaponConfirmation(weapon({B:10,H80:0})).profile,null);
   for (const profile of ['0','31','1.5','12 -1','12 1.2','2 1 0 3',12,{},'12 NaN','12 Infinity']) {
     assert.ok(validateWeapon(weapon({profile}),{requireProfile:true}).length,String(profile));

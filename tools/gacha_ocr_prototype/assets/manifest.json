@@ -1,8 +1,17 @@
 {
   "source": "https://warfarin.wiki/cn/operators",
-  "scope": "18 six-star gacha characters; no screenshots used as templates",
+  "scope": "19 six-star gacha characters; no screenshots used as templates",
   "artwork_rights": "Original game rights holders; public access is not a redistribution license",
   "characters": [
+    {
+      "name": "小刻",
+      "id": "chr_0040_sweetpie",
+      "page": "https://warfarin.wiki/cn/operators/kay",
+      "url": "https://static.warfarin.wiki/v4/charremoteicon/icon_chr_0040_sweetpie.webp",
+      "file": "icon_chr_0040_sweetpie.webp",
+      "bytes": 19380,
+      "sha256": "8dfe0eba51138e559f4aecb94e7e3e4c73e7ae57148b38b7f327f090fa175de7"
+    },
     {
       "name": "明河",
       "id": "chr_0037_minghe",

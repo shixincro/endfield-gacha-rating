@@ -7,9 +7,9 @@
   'use strict';
 
   // Editing rules only. Probability/scoring formulas remain in the scorers.
-  const LIMITED = Object.freeze(['莱万汀','洁尔佩塔','伊冯','汤汤','洛茜','庄方宜','弭弗','卡缪','诀','梨诺','提弗洛斯','祀','明河']);
+  const LIMITED = Object.freeze(['莱万汀','洁尔佩塔','伊冯','汤汤','洛茜','庄方宜','弭弗','卡缪','诀','梨诺','提弗洛斯','祀','明河','小刻']);
   const COMMON = Object.freeze(['骏卫','黎风','别礼','余烬','艾尔黛拉']);
-  const BANNERS = Object.freeze(['熔火灼痕','轻飘飘的信使','热烈色彩','河流的女儿','狼珀','春雷动，万物生','拳出无悔','逐罪者','临渊望北','晨星于此闪耀','冬猎','万物更新','烟火邀星河']);
+  const BANNERS = Object.freeze(['熔火灼痕','轻飘飘的信使','热烈色彩','河流的女儿','狼珀','春雷动，万物生','拳出无悔','逐罪者','临渊望北','晨星于此闪耀','冬猎','万物更新','烟火邀星河','锻砧、行囊与蜜糖']);
   const integer = (v, low = 0, high = Number.MAX_SAFE_INTEGER) => Number.isSafeInteger(v) && v >= low && v <= high;
   const orderedPools = record => [...(record?.pools || [])].sort((a,b) => a.index-b.index);
   const nameOf = value => value === '俊卫' ? '骏卫' : value;

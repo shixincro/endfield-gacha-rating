@@ -146,42 +146,36 @@ class BatchImportTests(unittest.TestCase):
         self.assertEqual(job['sessions'][0]['documents'][0]['file'], '乙.png')
         self.assertEqual(len(self.saved()), 1)
 
-    def test_endpoint_mixed_valid_and_invalid_images_exposes_separate_history(self):
-        entries = [self.png_entry('甲.png'), {'name': 'bad.html', 'data': 'eA=='},
-                   self.png_entry('乙.png', 'blue')]
+    def test_endpoint_saves_only_one_image_per_job_with_readable_history(self):
+        entry = self.png_entry('甲.png')
         with patch.object(server, 'WORKER', ImmediateWorker()):
-            status, response = handler('POST', '/api/import', {'files': entries})
+            status, response = handler('POST', '/api/import', {'files': [entry]})
         self.assertEqual(status, 202, response)
         status, job = handler('GET', '/api/jobs/' + response['id'])
         self.assertEqual(status, 200)
         self.assertEqual(job['status'], 'done')
-        self.assertEqual((job['succeeded'], job['failed']), (2, 1))
-        self.assertIn('PNG', job['items'][1]['error'])
-        # This serializes the actual response and would fail if uploaded blobs
-        # leaked into JOBS. Base64 image data must not be echoed either.
+        self.assertEqual((job['succeeded'], job['failed']), (1, 0))
         public = json.dumps(job, ensure_ascii=False)
-        self.assertNotIn(entries[0]['data'], public)
+        self.assertNotIn(entry['data'], public)
         self.assertNotIn('blob', public)
         status, history = handler('GET', '/api/sessions')
         self.assertEqual(status, 200)
-        self.assertEqual({h['name'] for h in history}, {'甲.png', '乙.png'})
-        for session in job['sessions']:
-            status, loaded = handler('GET', '/api/sessions/' + session['id'])
-            self.assertEqual(status, 200)
-            self.assertEqual(loaded['ledger'], session['ledger'])
-            self.assertEqual(loaded['result'], session['result'])
+        self.assertEqual([row['name'] for row in history], ['甲.png'])
+        session = job['session']
+        status, loaded = handler('GET', '/api/sessions/' + session['id'])
+        self.assertEqual(status, 200)
+        self.assertEqual(loaded['ledger'], session['ledger'])
+        self.assertEqual(loaded['result'], session['result'])
 
-    def test_all_invalid_batch_reports_each_file_without_loading_ocr(self):
-        entries = [{'name': 'bad.html', 'data': 'eA=='},
-                   {'name': 'bad.png', 'data': 'not-base64'}]
-        with patch.object(server, 'ENGINE', None), patch.object(server, 'WORKER', ImmediateWorker()):
-            status, response = handler('POST', '/api/import', {'files': entries})
-        self.assertEqual(status, 202, response)
-        job = server.JOBS[response['id']]
-        self.assertEqual(job['status'], 'error')
-        self.assertEqual(len(job['items']), 2)
-        self.assertEqual(job['completed'], 2)
-        self.assertEqual(self.calls, [])
+    def test_empty_and_multi_image_requests_fail_before_loading_ocr(self):
+        entries = [self.png_entry('甲.png'), self.png_entry('乙.png')]
+        with patch.object(server.WORKER, 'submit') as submit:
+            for files in ([], entries):
+                status, response = handler('POST', '/api/import', {'files': files})
+                self.assertEqual(status, 400)
+                self.assertEqual(response['error'], '一次只能导入一张截图。')
+        submit.assert_not_called()
+        self.assertEqual(server.JOBS, {})
         self.assertEqual(self.saved(), [])
 
     def test_damaged_image_has_readable_error_for_single_upload(self):
@@ -193,28 +187,29 @@ class BatchImportTests(unittest.TestCase):
         self.assertNotIn('0x',response['error'])
         self.assertEqual(self.saved(),[])
 
-    def test_batch_decode_and_verify_errors_are_readable_and_keep_specific_limits(self):
-        good=self.png_entry('正常.png')
-        truncated=base64.b64decode(good['data'])[:-30]
-        small=io.BytesIO();Image.new('RGB',(100,100),'red').save(small,'PNG')
-        entries=[good,{'name':'损坏.png','data':'eA=='},
-                 {'name':'无效数据.png','data':'not-base64'},
-                 {'name':'截断.png','data':base64.b64encode(truncated).decode('ascii')},
-                 {'name':'太小.png','data':base64.b64encode(small.getvalue()).decode('ascii')},
-                 {'name':'格式.html','data':'eA=='}]
-        with patch.object(server,'WORKER',ImmediateWorker()):
-            status,response=handler('POST','/api/import',{'files':entries})
-        self.assertEqual(status,202,response)
-        job=server.JOBS[response['id']]
-        self.assertEqual((job['succeeded'],job['failed']),(1,5))
-        for item in job['items'][1:4]:
-            self.assertEqual(item['error'],'无法读取图片，请检查文件是否损坏或重新导出。')
-        self.assertIn('截图尺寸不受支持',job['items'][4]['error'])
-        self.assertEqual(job['items'][5]['error'],'仅支持PNG、JPG、WebP截图。')
-        self.assertNotIn('BytesIO',json.dumps(job,ensure_ascii=False))
-        self.assertEqual(len(self.saved()),1)
+    def test_decode_and_verify_errors_are_readable_and_keep_specific_limits(self):
+        good = self.png_entry('正常.png')
+        truncated = base64.b64decode(good['data'])[:-30]
+        small = io.BytesIO()
+        Image.new('RGB', (100, 100), 'red').save(small, 'PNG')
+        unreadable = '无法读取图片，请检查文件是否损坏或重新导出。'
+        cases = [
+            ({'name': '损坏.png', 'data': 'eA=='}, unreadable),
+            ({'name': '无效数据.png', 'data': 'not-base64'}, unreadable),
+            ({'name': '截断.png', 'data': base64.b64encode(truncated).decode('ascii')}, unreadable),
+            ({'name': '太小.png', 'data': base64.b64encode(small.getvalue()).decode('ascii')}, '截图尺寸不受支持'),
+            ({'name': '格式.html', 'data': 'eA=='}, '仅支持PNG、JPG、WebP截图。'),
+        ]
+        with patch.object(server.WORKER, 'submit') as submit:
+            for entry, expected in cases:
+                with self.subTest(entry=entry['name']):
+                    status, response = handler('POST', '/api/import', {'files': [entry]})
+                    self.assertEqual(status, 400)
+                    self.assertIn(expected, response['error'])
+        submit.assert_not_called()
+        self.assertEqual(self.saved(), [])
 
-    def test_running_job_rejects_another_batch_without_creating_records(self):
+    def test_running_job_rejects_another_image_without_creating_records(self):
         server.JOBS['b' * 32] = {'status': 'running'}
         with patch.object(server.WORKER, 'submit') as submit:
             status, response = handler('POST', '/api/import', {'files': [self.png_entry('甲.png')]})

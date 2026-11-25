@@ -79,28 +79,30 @@ export class BrowserRatingAPI {
     return [...values];
   }
   async importImages(data){
+    if(!Array.isArray(data?.files)||data.files.length!==1)throw new Error('一次只能导入一张截图。');
     if([...this.jobs.values()].some(job=>job.status==='running'))throw new Error('已有识图任务正在运行，请等待完成。');
-    if(!Array.isArray(data?.files)||!data.files.length||data.files.length>12)throw new Error('请选择1—12张截图。');
-    const files=clone(data.files),id=newId();
-    const job={id,status:'running',message:'正在准备本地识图…',completed:0,total:files.length,items:[],sessions:[],succeeded:0,failed:0};
+    const file=data.files[0],id=newId();
+    const job={id,status:'running',message:'正在准备本地识图…',completed:0,total:1,items:[],sessions:[],succeeded:0,failed:0};
     this.jobs.set(id,job);
     // Complete outside the API call so existing progress UI remains responsive.
     (async()=>{
-      for(const [index,file] of files.entries()){
-        const item={index,name:file.name},recordId=newId();
-        try{
-          if(typeof file.data!=='string'||file.data.length>36*1024*1024)throw new Error('单张截图不能超过25 MB。');
-          const bytes=Uint8Array.from(atob(file.data),char=>char.charCodeAt(0));delete file.data;
-          if(bytes.length>25*1024*1024)throw new Error('单张截图不能超过25 MB。');
-          const value=await this.call('recognize',{name:file.name,bytes,id:recordId},message=>{job.message=`${index+1}/${files.length}：${message}`;});
-          await this.store.save(value.session,{files:value.files});
-          await this.hydrate(value.session);job.sessions.push(value.session);job.succeeded++;
-          Object.assign(item,{status:'done',sessionId:recordId});
-        }catch(error){job.failed++;Object.assign(item,{status:'error',error:error.message});}
-        job.items.push(item);job.completed=index+1;
+      const item={index:0,name:file?.name},recordId=newId();
+      try{
+        if(typeof file?.data!=='string')throw new Error('无法读取图片，请检查文件后重试。');
+        if(file.data.length>36*1024*1024)throw new Error('单张截图不能超过25 MB。');
+        const bytes=Uint8Array.from(atob(file.data),char=>char.charCodeAt(0));
+        if(bytes.length>25*1024*1024)throw new Error('单张截图不能超过25 MB。');
+        const value=await this.call('recognize',{name:file.name,bytes,id:recordId},message=>{job.message=message;});
+        await this.store.save(value.session,{files:value.files});
+        await this.hydrate(value.session);
+        job.session=value.session;job.sessions.push(value.session);job.succeeded=1;
+        job.status='done';job.message='已保存 1 条记录。';
+        Object.assign(item,{status:'done',sessionId:recordId});
+      }catch(error){
+        job.failed=1;job.status='error';job.message='未能识别这张截图。';
+        Object.assign(item,{status:'error',error:error.message});
       }
-      job.status=job.sessions.length?'done':'error';job.session=job.sessions[0];
-      job.message=`已独立保存 ${job.succeeded} 条记录`+(job.failed?`，${job.failed} 张失败`:'');
+      job.items.push(item);job.completed=1;
       // Bound job memory; persistent history lives in IndexedDB.
       const finished=[...this.jobs.values()].filter(row=>row.status!=='running');
       finished.slice(0,-3).forEach(row=>this.jobs.delete(row.id));

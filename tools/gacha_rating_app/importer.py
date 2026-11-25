@@ -23,12 +23,13 @@ BANNERS = {
     "河流的女儿": "汤汤", "狼珀": "洛茜", "春雷动，万物生": "庄方宜",
     "拳出无悔": "弭弗", "逐罪者": "卡缪", "临渊望北": "诀",
     "晨星于此闪耀": "梨诺", "冬猎": "提弗洛斯", "万物更新": "祀",
-    "烟火邀星河": "明河",
+    "烟火邀星河": "明河", "锻砧、行囊与蜜糖": "小刻",
 }
 CHAR_AXES = ["characterSix", "up", "limited", "five"]
 WEAPON_AXES = ["weaponSix", "signature"]
-RECOGNITION_VERSION = 'card-boundary-review-v8-empty-placeholder-20261111'
-DERIVED_REVIEW_VERSIONS = {RECOGNITION_VERSION, 'card-boundary-review-v7-pity-source-20261109',
+RECOGNITION_VERSION = 'card-boundary-review-v9-xiaoke-20261125'
+DERIVED_REVIEW_VERSIONS = {RECOGNITION_VERSION, 'card-boundary-review-v8-empty-placeholder-20261111',
+                           'card-boundary-review-v7-pity-source-20261109',
                            'card-boundary-review-v6-minghe-20261105',
                            'card-boundary-review-v5-20261024', 'live-ledger-validation-v4-20261024',
                            'avatar-review-migration-v3-20261023'}

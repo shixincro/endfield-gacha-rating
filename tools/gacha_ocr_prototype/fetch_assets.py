@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 ROOT = Path(__file__).resolve().parent
 ASSETS = ROOT / "assets"
 INDEX = "https://warfarin.wiki/cn/operators"
-NAMES = {"明河", "祀", "提弗洛斯", "洛茜", "弭弗", "黎风", "余烬", "洁尔佩塔", "艾尔黛拉", "梨诺", "诀", "汤汤", "骏卫", "卡缪", "伊冯", "莱万汀", "别礼", "庄方宜"}
+NAMES = {"小刻", "明河", "祀", "提弗洛斯", "洛茜", "弭弗", "黎风", "余烬", "洁尔佩塔", "艾尔黛拉", "梨诺", "诀", "汤汤", "骏卫", "卡缪", "伊冯", "莱万汀", "别礼", "庄方宜"}
 
 
 def get(url: str) -> bytes:

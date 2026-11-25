@@ -171,7 +171,7 @@ class InterruptionProjectionTests(unittest.TestCase):
                      {'ownedSixStars': ['俊卫', '骏卫']}):
             with self.subTest(info=info), self.assertRaises(ValueError):
                 normalize_correction({'excludedIndices': [7], 'resumeInfo': {'8': info}})
-        for info in (None, [], {'08': {}}, {'13': {}}):
+        for info in (None, [], {'08': {}}, {str(len(BANNERS)): {}}):
             with self.subTest(resume=info), self.assertRaises(ValueError):
                 normalize_correction({'excludedIndices': [7], 'resumeInfo': info})
         data = ledger([pool(6, 30), pool(8, 10, initial=30), pool(9, 20, [(20, '梨诺')], 40)])

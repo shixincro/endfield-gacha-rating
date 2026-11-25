@@ -162,7 +162,9 @@ class InitialHistoryFlowTests(unittest.TestCase):
         counts = result['character']['counts']
         self.assertEqual((counts['main'], counts['six'], counts['up']), (30, 0, 0))
         opportunity = result['planning']['pools'][0]['opportunity']
-        self.assertAlmostEqual(opportunity['value'], 1.3404073991)
+        self.assertEqual(opportunity['value'], 0)
+        self.assertAlmostEqual(opportunity['rawCostDifference'], 2.7170538088)
+        self.assertAlmostEqual(opportunity['waterSaving'], 12.3422189766)
         self.assertEqual(opportunity['reason'], 'estimated')
 
 

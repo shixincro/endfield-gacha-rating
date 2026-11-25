@@ -28,8 +28,8 @@
 | 角色五星 | `five-flat-v1` |
 | 武器输入与路由 | `weapon-potential-table-loss-v2-20261104` |
 | 武器潜能模型 | `weapon-result-profile-gift-inclusive-normal-1.0` |
-| 规划亏损 | `planning-three-losses-v3.1+observed-loss-v2.3+opportunity-main120-flat-token-v4` |
-| 识别证据与账本校验 | `card-boundary-review-v8-empty-placeholder-20261111` |
+| 规划亏损 | `planning-three-losses-v3.1+observed-loss-v2.3+opportunity-flat-benchmark-water-v6` |
+| 识别证据与账本校验 | `card-boundary-review-v9-xiaoke-20261125` |
 
 动态规划用浮点数递推指定规则下的概率，部分长卷积使用 FFT，部分分位计算只保留所需的概率前缀。超过计算上限时，按各轴的规则报告缺项或走兼容参照。仿真页用伪随机抽卡记录检验分布表现，日常评分按上述模块直接计算。
 

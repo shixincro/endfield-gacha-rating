@@ -1,16 +1,14 @@
 """Local stop-state opportunity quote, not a second realized loss or luck score.
 
-Conditional finite DP; no Monte Carlo. The first-120 comparison uses the
-existing free/top-up policy and terminal water table while the main guarantee
-is live. From 120 onward, compare paid draws to the next UP or token with the
-steady cost of getting one featured character per banner.
+Both stages compare the expected additional paid draws from the actual stop
+with the steady cost per flat-policy UP, adjusted for the pity kept by stopping.
 """
 from functools import lru_cache
 import json
 import math
 from pathlib import Path
 
-VERSION='opportunity-main120-flat-token-v4'
+VERSION='opportunity-flat-benchmark-water-v6'
 _TABLE=json.loads(Path(__file__).with_name('water_values.json').read_text(encoding='utf-8'))
 _WATER={r['pity']:r for r in _TABLE['rows']}
 RUSH_UP=1-.996**10
@@ -26,8 +24,8 @@ REASONS={
     'target-full-potential':'当期 UP 已确认满潜，不再计算信物阶段的机会亏损。',
     'ongoing':'本池仍在进行，不结算放弃机会。',
     'source-incomplete':'本池原始记录或资源信息有缺失／冲突，机会亏损缺项。',
-    'estimated':'比较留在本池与换池获取一个 UP 的期望净成本，包含终态资源估值。',
-    'token-vs-flat':'比较自然 UP 或下一次信物所需的追加永久抽，与拿到一个平铺 UP 的稳态永久抽成本。',
+    'estimated':'用平铺成本减去继续本池拿 UP 的期望追加永久抽，以及停手保留水位的预计省抽。',
+    'token-vs-flat':'按自然 UP 或下一次信物先到计算追加永久抽，与扣除保留水位价值后的平铺成本相比。',
 }
 
 
@@ -46,8 +44,7 @@ def terminal_quote(t,n):
 
 @lru_cache(maxsize=16384)
 def after_hit(t,n,free,topup=True):
-    # topup=False keeps raw first-hit semantics for the unchanged water-table
-    # check. Production routes apply both free completion and46..59 ->60.
+    # Stop at the first hit when quoting only the cost of reaching an UP.
     if not topup or (t>=free and not 46<=t<60):
         return 0.,0.,terminal_quote(t,n)
     chance=p6(n)
@@ -110,25 +107,23 @@ def quote(pool,row,known_target_copies):
     try:
         deadline=(t//TOKEN_INTERVAL+1)*TOKEN_INTERVAL if token_stage else FIRST_UP
         if token_stage:
-            stay_paid=paid_to_up_or_token(deadline-t,int(n))
-            delta=FLAT_FIRST_UP_PAID-stay_paid
+            stay_paid=stay_draws=paid_to_up_or_token(deadline-t,int(n))
             reason='token-vs-flat'
-            return {'status':'ok','value':max(0.,delta),'signedDifference':delta,
-                    'stay':{'paid':stay_paid,'mainDraws':stay_paid},
-                    'benchmark':{'paid':FLAT_FIRST_UP_PAID,'strategy':'flat-first-up-free-finish'},
-                    'rawCostDifference':delta,'reason':reason,'message':REASONS[reason],
-                    'version':VERSION,'approximate':True,'method':'natural-up-or-token-dp-vs-flat-paid',
-                    'deadline':deadline}
-        stay=first_up(int(t),int(n),int(free),not pool['rushUsed'])
-        switch=first_up(0,int(n),20 if t>=60 else 10,True)
-        delta=switch[0]+switch[2]-stay[0]-stay[2]
+            method='natural-up-or-token-dp-vs-flat-paid'
+        else:
+            stay_paid,stay_draws,_=first_up(int(t),int(n),int(free),not pool['rushUsed'],topup=False)
+            reason='estimated'
+            method='first-up-dp-vs-flat-paid'
+        # Hold next-banner free allowance fixed so only the retained pity is
+        # valued here, without crediting the #60 voucher a second time.
+        water_saving=terminal_quote(t,0)-terminal_quote(t,int(n))
+        cost_difference=FLAT_FIRST_UP_PAID-stay_paid
+        delta=cost_difference-water_saving
         if not math.isfinite(delta):return unavailable()
     except (ValueError,KeyError):return unavailable()
-    details=lambda values:{'paid':values[0],'mainDraws':values[1],'terminal':values[2],
-                           'net':values[0]+values[2]}
     return {'status':'ok','value':max(0.,delta),'signedDifference':delta,
-            'stay':details(stay),'switch':details(switch),
-            'rawCostDifference':switch[0]-stay[0],'reason':'estimated','message':REASONS['estimated'],
-             'version':VERSION,'approximate':True,'method':'conditional-stop-state-DP-plus-fixed-terminal-quote',
-             'deadline':deadline,
-             'limitations':'只在首个主池120保底还有效时比较；期初持有或只出加急UP不关闭该保底。'}
+            'stay':{'paid':stay_paid,'mainDraws':stay_draws},
+            'benchmark':{'paid':FLAT_FIRST_UP_PAID,'strategy':'flat-first-up-free-finish'},
+            'rawCostDifference':cost_difference,'waterSaving':water_saving,
+            'reason':reason,'message':REASONS[reason],
+            'version':VERSION,'approximate':True,'method':method,'deadline':deadline}

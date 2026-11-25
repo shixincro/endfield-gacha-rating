@@ -4,7 +4,7 @@ const labels={characterSix:'角色六星',up:'当期UP',limited:'限定',five:'�
 const ui=window.RatingUIModel;
 const edit=window.CharacterEdit;
 const characters=[...edit.LIMITED,...edit.COMMON];
-let token='',planningVersion='',characterVersion='',weaponVersion='',recognitionVersion='',scoringScenarioVersion='',interruptionVersion='',session=null,files=[],revision=0,timer=null,busy=false,requestId=0;
+let token='',planningVersion='',characterVersion='',weaponVersion='',recognitionVersion='',scoringScenarioVersion='',interruptionVersion='',session=null,importFile=null,revision=0,timer=null,busy=false,requestId=0;
 let characterDraft=null,weaponDraft=null,weaponProfileDraft=false,dialogOrigin=null,resultsTab='character';
 let autoReviewQueue=[],autoReviewIndex=0,autoReviewDirty=false,characterReviewPoolId=null;
 let navigationId=0,historyRows=[],historySelected=new Set(),historyDeleteIds=[],historyDeleting=false,historyRequestId=0,restoring=false;
@@ -20,12 +20,32 @@ const scoreSettingPending=()=>!!planningSettingRequest||!!scoringScenarioRequest
 let draftValidationTimer=null,draftValidationEpoch=0,draftValidationRequest=0,draftValidationLedger=null,draftValidationState='idle',draftValidationMessage='',draftFingerprint='',draftOpeningSignature='';
 const characterPoolViews=new Map();
 let weaponIssueView=null,queueIssueView=null;
-const viewDialogs=['planningDetailDialog','planningAllDialog','planningInfoDialog','historyDialog','hypothesisDialog','manualSupplementDialog','recordFormatDialog','resultNicknameDialog'];
+const viewDialogs=['planningDetailDialog','planningAllDialog','planningInfoDialog','historyDialog','hypothesisDialog','manualSupplementDialog','recordFormatDialog','resultNicknameDialog','weaponOverflowDialog'];
 const clone=value=>JSON.parse(JSON.stringify(value));
 const effectiveCharacter=value=>edit.validateInterruption(value)?value:edit.projectCharacter(value).character;
 const hasWeaponProfile=w=>ui.hasWeaponProfile(w);
 const el=(tag,text,cls)=>{const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;};
-const displayText=value=>String(value??'').replace(/(?:，)?请核对(?:原图)?[。！]?/g,'').replace(/待核对/g,'数据异常').replace(/核对/g,'查看');
+// Some saved records and the scoring service report the original terminology.
+const weaponOutputMessages=new Map([
+  ['专武配置须为潜能数量表。','专武产出配置格式无效。'],
+  ['潜能配置格式无效。','专武产出配置格式无效。'],
+  ['总专武种类须为1至30的整数。','有专武产出池数须为1至30的整数。'],
+  ['专武种类数须为1至30。','有专武产出池数须为1至30的整数。'],
+  ['1至5潜的专武数量均须为0至30的整数。','各档产出的池数须为0至30的整数。'],
+  ['各潜能数量之和不能超过总专武种类。','各档产出的池数之和不能超过有专武产出池数。'],
+  ['溢出专武数量须为0至30000的整数。','溢出总份数须为0至30000的整数。'],
+  ['有溢出时至少需要一把5潜专武。','有溢出时，至少需要一池产出 6 份及以上。'],
+  ['请分别填写各把5潜专武的溢出份数。','请填写各池的溢出份数。'],
+  ['各把5潜专武的溢出份数之和须等于溢出专武数量。','各池溢出份数之和须等于溢出总份数。'],
+  ['结果谱总份数少于原始抽出专武数，请核对潜能和溢出。','配置的专武总份数不能少于原始当期专武数。'],
+  ['结果谱种类数不能超过原始抽出专武数。','有专武产出池数不能超过原始当期专武数。'],
+  ['由结果谱推算的赠品数超出当前总抽数能够到达的赠品节点。','专武产出配置推算的赠品数超过当前抽数可到达的赠品节点。'],
+  ['结果谱超出当前确定性计算预算，请核对高潜能和溢出份数。','配置超出当前计算范围，请检查单池产出和溢出份数。'],
+]);
+const displayText=value=>{
+  const text=String(value??'');
+  return (weaponOutputMessages.get(text)??text).replace(/(?:，)?请核对(?:原图)?[。！]?/g,'').replace(/待核对/g,'数据异常').replace(/核对/g,'查看');
+};
 const noticeStates={status:{sequence:0,timer:null,hideTimer:null},error:{sequence:0,timer:null,hideTimer:null}};
 const modalOrder=[];
 function resetNoticeTimers(state){clearTimeout(state.timer);clearTimeout(state.hideTimer);state.timer=null;state.hideTimer=null;return ++state.sequence;}
@@ -216,13 +236,35 @@ async function calculate(reviewed,{preserveReview=false}={}){
     session=updated;renderLedgerIssues();renderResults();renderReviewActions();refreshHistory();return true;
   }catch(e){if(myRequest!==requestId||myRevision!==revision)return false;error(e.message);$('calculating').textContent='计算未完成，请检查提示。';return false;}
 }
-function selected(list){if(busy||restoring||historyDeleting||scoreSettingPending())return;files=[...list];$('selection').textContent=files.length?files.map(f=>f.name).join('、'):'尚未选择文件';$('import').disabled=!files.length;}
+const singleImportMessage='一次只能导入一个文件。';
+function selected(list){
+  if(busy||restoring||historyDeleting||scoreSettingPending())return;
+  importFile=list.length===1?list[0]:null;
+  $('selection').textContent=importFile?.name||'尚未选择文件';
+  $('import').disabled=!importFile;
+  if(list.length>1){$('images').value='';error(singleImportMessage);}
+  else error('');
+}
 function inputFileKind(file){return /\.(?:txt|json)$/i.test(file.name||'')?'record':/\.(?:png|jpe?g|webp)$/i.test(file.name||'')?'image':null;}
 $('images').onchange=e=>selected(e.target.files);
 const dz=$('dropzone');dz.ondragover=e=>{e.preventDefault();dz.classList.add('drag');};dz.ondragleave=()=>dz.classList.remove('drag');
-dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag');selected(e.dataTransfer.files);};
+dz.ondrop=e=>{e.preventDefault();dz.classList.remove('drag');$('images').value='';selected(e.dataTransfer.files);};
 const readFile=f=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(',')[1]);reader.onerror=()=>reject(Error('无法读取文件'));reader.readAsDataURL(f);});
-function importFailures(items){return (items||[]).filter(i=>i.status==='error').map(i=>(i.name||'截图')+'：'+displayText(i.error||'未能识别，请检查图片后重试。')).join('\n');}
+async function importImageFile(file){
+  status('正在读取截图…',true);
+  const job=await api('/api/import',{files:[{name:file.name,data:await readFile(file)}]});
+  while(true){
+    const progress=await api('/api/jobs/'+job.id);
+    if(progress.status==='error')throw Error(progress.items?.[0]?.error||progress.message||'未能识别，请检查图片后重试。');
+    if(progress.status==='done'){
+      const recognized=progress.session||progress.sessions?.[0];
+      if(!recognized)throw Error('未收到识图结果，请在本机历史记录中查看。');
+      return {sessions:[recognized],summary:'已导入 1 张截图。可在本机历史记录中打开。'};
+    }
+    status(progress.message,true);
+    await new Promise(resolve=>setTimeout(resolve,900));
+  }
+}
 async function openSavedSession(id){
   if(historyDeleting||restoring||deletedRecordIds.has(id))return false;
   const navigation=++navigationId;error('');status('正在打开记录…',true);
@@ -235,48 +277,24 @@ async function openSavedSession(id){
   }catch(e){if(navigation===navigationId){error(e.message);status('');}return false;}
 }
 $('import').onclick=async()=>{
-  if(busy||historyDeleting||restoring||scoreSettingPending())return;
-  let completedSummary='';
+  if(!importFile||busy||historyDeleting||restoring||scoreSettingPending())return;
+  const file=importFile,kind=inputFileKind(file);
+  error('');
   try{
-    const selectedFiles=[...files];
-    error('');if(!selectedFiles.length||selectedFiles.length>12)throw Error('请选择1—12个截图或 TXT / JSON 记录文件。');
-    const unsupported=selectedFiles.filter(f=>!inputFileKind(f));
-    if(unsupported.length)throw Error('不支持的文件：'+unsupported.map(f=>f.name).join('、')+'。请选择 PNG、JPG、WebP、TXT 或 JSON。');
-    if(selectedFiles.reduce((s,f)=>s+f.size,0)>70*1024*1024)throw Error('这一批文件超过70 MB，请分批处理。');
-    const images=selectedFiles.filter(f=>inputFileKind(f)==='image'),records=selectedFiles.filter(f=>inputFileKind(f)==='record');
-    const imported=[],failures=[],warnings=[],unsupportedRecords=[];let failed=0;
+    if(!kind)throw Error('不支持的文件。请选择 PNG、JPG、WebP、TXT 或 JSON。');
+    if(kind==='image'&&file.size>25*1024*1024)throw Error('单张截图不能超过25 MB。');
     busy=true;navigationId++;updateHistoryControls();
-    if(images.length){
-      try{
-        status('正在读取截图…',true);const uploaded=[];
-        for(const f of images)uploaded.push({name:f.name,data:await readFile(f)});
-        const job=await api('/api/import',{files:uploaded});
-        while(true){
-          const progress=await api('/api/jobs/'+job.id);status(progress.message,progress.status==='running');
-          if(progress.status==='error'){
-            failed+=progress.failed||(progress.items||[]).filter(item=>item.status==='error').length||images.length;
-            failures.push([progress.message,importFailures(progress.items)].filter(Boolean).join('\n'));break;
-          }
-          if(progress.status==='done'){
-            imported.push(...(progress.sessions||(progress.session?[progress.session]:[])));
-            failed+=progress.failed??(progress.items||[]).filter(item=>item.status==='error').length;
-            const message=importFailures(progress.items);if(message)failures.push(message);break;
-          }
-          await new Promise(resolve=>setTimeout(resolve,900));
-        }
-      }catch(e){failed+=images.length;failures.push('截图导入：'+displayText(e.message));}
-    }
-    for(const file of records){
-      try{
-        const result=await importRecordFile(file);imported.push(...result.sessions);
-        failures.push(...result.failures);failed+=result.failures.length;warnings.push(...result.warnings);
-      }catch(e){failed++;failures.push(file.name+'：'+displayText(e.message));if(e.code==='record_format_unrecognized')unsupportedRecords.push(file.name);}
-    }
-    if(imported.length)await loadSession(imported[0],{reviewImport:images.length>0&&imported[0].documents?.some(d=>d.sourceImage)});
-    completedSummary=`已完成：${imported.length} 份独立记录，${failed} ${records.length?'项':'张'}失败。可在本机历史记录中打开。`;
-    showRecordImportFeedback(completedSummary,failures,warnings);await refreshHistory();
-    if(unsupportedRecords.length)showUnsupportedRecordFormat(unsupportedRecords);
-  }catch(e){error(e.message);status(completedSummary);}finally{busy=false;$('import').disabled=historyDeleting||!files.length;updateHistoryControls();}
+    const result=kind==='image'?await importImageFile(file):await importRecordFile(file);
+    const first=result.sessions[0];
+    if(first)await loadSession(first,{reviewImport:kind==='image'&&first.documents?.some(d=>d.sourceImage)});
+    showRecordImportFeedback(result.summary,result.failures,result.warnings,!!first);
+    await refreshHistory();
+  }catch(e){
+    showRecordImportFeedback('导入失败。',[file.name+'：'+displayText(e.message)]);
+    if(e.code==='record_format_unrecognized')showUnsupportedRecordFormat([file.name]);
+  }finally{
+    busy=false;updateHistoryControls();
+  }
 };
 function loadSession(value,{reviewImport=false}={}){
   if(historyDeleting||deletedRecordIds.has(value?.id))return false;
@@ -313,6 +331,7 @@ function loadSession(value,{reviewImport=false}={}){
 // The two editors reuse the dialog shell; each submits only its own draft.
 function closeReviewDialogs(){
   closeHypothesis();
+  if($('weaponOverflowDialog').open)$('weaponOverflowDialog').close();
   clearTimeout(draftValidationTimer);draftValidationTimer=null;draftValidationEpoch++;draftValidationRequest++;draftValidationLedger=null;draftValidationState='idle';draftFingerprint='';draftOpeningSignature='';weaponIssueView=null;queueIssueView=null;
   $('draftValidationSummary').hidden=true;$('currentGlobalIssues').replaceChildren();
   if($('resultsDialog').open)$('resultsDialog').close();
@@ -964,6 +983,42 @@ function renderCharacterReview(focusEvent=null,focusPoolId=null){
   if(focusInput){focusInput.focus();focusInput.scrollIntoView?.({block:'nearest'});}
   renderDraftValidation();
 }
+function resizeWeaponOverflowAllocation(config){
+  const full=config.counts[4];
+  if(Number.isSafeInteger(full)&&full>1&&full<=30&&config.overflowCopies>0){
+    config.overflowByType=Array.from({length:full},(_,i)=>config.overflowByType?.[i]??0);
+  }else delete config.overflowByType;
+}
+function openWeaponOverflow(config,commit){
+  const draft=clone(config),fields=$('weaponOverflowFields'),errorId='weaponOverflowError';
+  const allocations=el('div',undefined,'weapon-overflow-grid');
+  const renderAllocations=()=>{
+    resizeWeaponOverflowAllocation(draft);
+    allocations.replaceChildren(...(draft.overflowByType||[]).map((copies,i)=>
+      field('第 '+(i+1)+' 池溢出份数',copies,value=>{
+        draft.overflowByType[i]=value??0;
+        dialogError(errorId,'');
+      })));
+  };
+  const total=field('溢出总份数',draft.overflowCopies,value=>{
+    draft.overflowCopies=value??0;
+    dialogError(errorId,'');
+    renderAllocations();
+  });
+  fields.replaceChildren(total,allocations);
+  renderAllocations();dialogError(errorId,'');
+  $('applyWeaponOverflow').onclick=()=>{
+    if(!$('weaponOverflowDialog').open||!$('resultsDialog').open||!dialogIsCurrent())return;
+    const error=ui.weaponOverflowError(draft);
+    if(error){dialogError(errorId,error);return;}
+    const changed=draft.overflowCopies!==config.overflowCopies||
+      JSON.stringify(draft.overflowByType)!==JSON.stringify(config.overflowByType);
+    if(changed)commit(draft);
+    closeViewDialog('weaponOverflowDialog');
+    if(changed)draftChanged();
+  };
+  openDialog('weaponOverflowDialog');
+}
 function renderWeaponReview(){
   const target=$('weaponReview');target.replaceChildren();$('weaponScoreDetails').replaceChildren();
   if(!weaponDraft){target.append(el('p','未识别到武器数据。','empty'));return;}
@@ -986,40 +1041,46 @@ function renderWeaponReview(){
   const toggleLabel=el('label',undefined,'check'),toggle=el('input');
   toggle.type='checkbox';toggle.id='weaponProfileDraft';toggle.checked=weaponProfileDraft;
   toggle.onchange=()=>{weaponProfileDraft=toggle.checked;renderWeaponReview();draftChanged();};
-  toggleLabel.append(toggle,el('span','潜能配置修正'));target.append(toggleLabel);
-  const config=ui.weaponConfigForForm(w),table=el('table',undefined,'weapon-config-table');
-  const allocations=el('div',undefined,'pool-meta');
-  const updateConfig=()=>{w.potentialConfig=config;w.profile=null;toggle.checked=weaponProfileDraft=true;renderWeaponScoreDetails();};
-  function renderAllocations(){
-    allocations.replaceChildren();
-    const full=config.counts[4];
-    if(!(Number.isInteger(full)&&full>1&&full<=30&&config.overflowCopies>0))return;
-    for(let i=0;i<full;i++){
-      allocations.append(field('满潜专武'+(i+1)+'溢出份数',config.overflowByType?.[i]||null,value=>{
-        const amounts=Array.from({length:full},(_,j)=>config.overflowByType?.[j]??0);
-        amounts[i]=value??0;config.overflowByType=amounts;updateConfig();
-      }));
-    }
+  toggleLabel.append(toggle,el('span','专武产出配置修正'));target.append(toggleLabel);
+  const config=ui.weaponConfigForForm(w),profile=el('div',undefined,'weapon-output-config');
+  const totals=el('div',undefined,'weapon-output-grid'),distribution=el('div',undefined,'weapon-output-grid');
+  const firstCount=el('output'),firstField=el('div',undefined,'field');
+  firstCount.setAttribute('aria-label','产出 1 份的池数（自动）');
+  firstField.append(el('span','产出 1 份的池数（自动）'),firstCount);distribution.append(firstField);
+  const overflowLabel=el('span',undefined,'muted small');
+  const updatePreview=()=>{
+    const other=config.counts.reduce((sum,n)=>sum+n,0);
+    const valid=Number.isSafeInteger(config.totalTypes)&&config.counts.every(n=>Number.isSafeInteger(n)&&n>=0)&&other<=config.totalTypes;
+    firstCount.textContent=valid?String(config.totalTypes-other):'—';
+    overflowLabel.textContent=config.overflowCopies?'已配置 '+config.overflowCopies+' 份':'无溢出';
+  };
+  const updateConfig=()=>{
+    w.potentialConfig=config;w.profile=null;toggle.checked=weaponProfileDraft=true;
+    updatePreview();renderWeaponScoreDetails();
+  };
+  totals.append(
+    field('有专武产出池数',config.totalTypes,value=>{config.totalTypes=value;updateConfig();}),
+    field('亏损抽数（选填）',w.lossDraws,value=>{w.lossDraws=value;renderWeaponScoreDetails();})
+  );
+  for(let i=0;i<5;i++){
+    const label=i===4?'产出 6 份及以上的池数':'产出 '+(i+2)+' 份的池数';
+    distribution.append(field(label,config.counts[i]||null,value=>{
+      config.counts[i]=value??0;
+      if(i===4)resizeWeaponOverflowAllocation(config);
+      updateConfig();
+    }));
   }
-  function updateAllocationFields(){
-    const full=config.counts[4];
-    if(Number.isInteger(full)&&full>1&&full<=30&&config.overflowCopies>0){
-      config.overflowByType=Array.from({length:full},(_,j)=>config.overflowByType?.[j]??0);
-    }else delete config.overflowByType;
-    renderAllocations();
-  }
-  const fields=[field('总专武种类',config.totalTypes,value=>{config.totalTypes=value;updateConfig();})];
-  for(let i=0;i<5;i++)fields.push(field((i+1)+'潜专武数量',config.counts[i]||null,value=>{
-    config.counts[i]=value??0;if(i===4)updateAllocationFields();updateConfig();
+  const overflow=el('div',undefined,'actions weapon-overflow-action');
+  const editOverflow=button('溢出配置',()=>openWeaponOverflow(config,next=>{
+    config.overflowCopies=next.overflowCopies;
+    if(next.overflowByType)config.overflowByType=next.overflowByType;
+    else delete config.overflowByType;
+    updateConfig();
   }));
-  fields.push(field('溢出专武数量',config.overflowCopies||null,value=>{
-    config.overflowCopies=value??0;updateAllocationFields();updateConfig();
-  }));
-  fields.push(field('亏损抽数（选填）',w.lossDraws,value=>{w.lossDraws=value;renderWeaponScoreDetails();}));
-  for(let i=0;i<fields.length;i+=2){
-    const row=el('tr');for(const input of fields.slice(i,i+2)){const cell=el('td');cell.append(input);row.append(cell);}table.append(row);
-  }
-  target.append(table,allocations,el('p','亏损抽数仅从当期专武的评分抽数中扣除。','muted small'));renderAllocations();
+  editOverflow.setAttribute('aria-haspopup','dialog');editOverflow.setAttribute('aria-controls','weaponOverflowDialog');
+  overflow.append(editOverflow,overflowLabel);
+  profile.append(totals,el('h3','单池产出数量'),distribution,overflow);
+  target.append(profile,el('p','亏损抽数仅从当期专武的评分抽数中扣除。','muted small'));updatePreview();
   weaponIssueView=el('div',undefined,'weapon-current-issues');target.append(weaponIssueView);
   renderWeaponScoreDetails();renderDraftValidation();
 }
@@ -1703,9 +1764,9 @@ async function importRecordFile(file){
   const summary=collection?'已恢复 '+restored.length+'/'+records.length+' 份独立记录，'+failures.length+' 份失败。可在本机历史记录中打开。':restored.length?'记录已恢复并按当前算法重算。':'记录恢复失败。';
   return {sessions:restored,failures,warnings:[],summary};
 }
-function showRecordImportFeedback(summary,failures=[],warnings=[]){
+function showRecordImportFeedback(summary,failures=[],warnings=[],hasImported=false){
   $('historyDeleteFeedback').hidden=false;
-  $('historyDeleteFeedback').textContent=[summary,...failures,...warnings,failures.length?'成功记录已保留；重试时只导入失败的记录。':''].filter(Boolean).join('\n');
+  $('historyDeleteFeedback').textContent=[summary,...failures,...warnings,failures.length&&hasImported?'成功记录已保留；重试时只导入失败的记录。':''].filter(Boolean).join('\n');
   $('historyDeleteFeedback').className='history-feedback small'+(failures.length?' has-error':'');
   status([summary,...warnings].join('\n'));error(failures.join('\n'));
 }
@@ -1713,11 +1774,13 @@ $('restoreFile').onchange=async e=>{
   if(busy||historyDeleting||restoring||scoreSettingPending())return;
   let started=false;
   try{
-    const file=e.target.files[0];if(!file)return;
+    const chosen=e.target.files;if(!chosen.length)return;
+    if(chosen.length!==1)throw Error(singleImportMessage);
+    const file=chosen[0];
     restoring=true;started=true;navigationId++;updateHistoryControls();error('');
     const result=await importRecordFile(file);
     if(result.sessions.length)await loadSession(result.sessions[0]);
-    showRecordImportFeedback(result.summary,result.failures,result.warnings);
+    showRecordImportFeedback(result.summary,result.failures,result.warnings,result.sessions.length>0);
   }catch(failure){const message='导入失败：'+displayText(failure.message);error(message);status('');$('historyDeleteFeedback').hidden=false;$('historyDeleteFeedback').textContent=message;$('historyDeleteFeedback').className='history-feedback small has-error';if(failure.code==='record_format_unrecognized')showUnsupportedRecordFormat([e.target?.files?.[0]?.name]);}finally{
     restoring=false;e.target.value='';updateHistoryControls();
     if(started){if(session&&$('calculating').hidden)$('save').disabled=false;await refreshHistory();}
@@ -1737,7 +1800,7 @@ function updateHistoryControls(){
   for(const node of $('history').querySelectorAll('input'))node.disabled=locked;
   for(const node of $('history').querySelectorAll('button'))node.disabled=locked;
   for(const node of document.querySelectorAll('[data-close-dialog]'))if(node.getAttribute('data-close-dialog')==='historyDialog')node.disabled=historyDeleting||restoring;
-  $('import').disabled=busy||historyDeleting||restoring||scoreSettingPending()||!files.length;$('images').disabled=busy||historyDeleting||restoring||scoreSettingPending();
+  $('import').disabled=busy||historyDeleting||restoring||scoreSettingPending()||!importFile;$('images').disabled=busy||historyDeleting||restoring||scoreSettingPending();
   if(historyDeleting||restoring)$('save').disabled=true;
   updateResultExport();
   renderReviewActions();renderScoringScenario();if(hypothesis)renderHypothesisActivation();

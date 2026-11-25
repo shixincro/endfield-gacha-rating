@@ -107,6 +107,9 @@ class AvatarIdentityTests(unittest.TestCase):
                          common | {"祀", "提弗洛斯", "梨诺"})
         self.assertEqual(recognize.banner_characters("烟火邀星河"),
                          common | {"明河", "祀", "提弗洛斯"})
+        self.assertEqual(recognize.banner_characters("锻砧、行囊与蜜糖"),
+                         common | {"小刻", "明河", "祀"})
+        self.assertEqual(recognize.banner_from_text("锻砧行囊与蜜糖"), (1., "锻砧、行囊与蜜糖"))
         self.assertEqual(recognize.banner_characters("不存在"), set())
 
     def test_fallback_location_does_not_autoaccept_portrait(self):

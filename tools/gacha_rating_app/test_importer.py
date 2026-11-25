@@ -45,7 +45,8 @@ class SummaryTests(unittest.TestCase):
         sys.path.insert(0,str(prototype))
         import recognize
         self.assertEqual(list(BANNERS.items()), list(reversed(recognize.BANNERS.items())))
-        self.assertEqual(list(BANNERS.items())[11:13], [('万物更新','祀'), ('烟火邀星河','明河')])
+        self.assertEqual(list(BANNERS.items())[11:14],
+                         [('万物更新','祀'), ('烟火邀星河','明河'), ('锻砧、行囊与蜜糖','小刻')])
         manifest=json.loads((prototype/'assets/manifest.json').read_text(encoding='utf-8'))
         self.assertCountEqual([item['name'] for item in manifest['characters']],
                               [*BANNERS.values(), *recognize.COMMON_CHARACTERS])

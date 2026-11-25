@@ -18,6 +18,7 @@ from avatar_locator import locate_avatar
 
 ROOT = Path(__file__).resolve().parent
 BANNERS = {
+    "锻砧、行囊与蜜糖": "小刻",
     "烟火邀星河": "明河",
     "万物更新": "祀",
     "冬猎": "提弗洛斯", "晨星于此闪耀": "梨诺", "临渊望北": "诀",
@@ -283,6 +284,8 @@ def parse(im, rows, output_dir):
             texts=''.join(r['text'] for r in line)
             pity=re.search(r'已垫\s*(\d+)',texts)
             location=locate_avatar(im, [x,y,w,h])
+            if location['needs_review'] and cy>=rush_y and num is not None and pulls==10:
+                location=locate_avatar(im, [x,y,w,h], clipped_rush_placeholder=True)
             ax,ay,aw,ah=location['box']
             crop=im[ay:ay+ah,ax:ax+aw]
             # Unknown/no-hit portraits are greyscale; do not turn X/? into a character.

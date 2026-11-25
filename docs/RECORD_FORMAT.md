@@ -13,7 +13,7 @@
 | 字段 | 含义 |
 | --- | --- |
 | `character.pools` | 按池序号递增的常规限定池列表 |
-| `pool.index / banner / up` | 目录序号、池名和当期 UP，当前序号 0–12 |
+| `pool.index / banner / up` | 目录序号、池名和当期 UP，当前序号 0–13 |
 | `pool.total` | 本池主抽数，包含免费主抽。加急单列 |
 | `pool.events[].at` | 本池从 1 开始的累计出货位置 |
 | `pool.events[].character` | 主池出货角色，`source` 为 `main` |

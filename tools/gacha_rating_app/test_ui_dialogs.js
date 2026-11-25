@@ -177,7 +177,7 @@ function erroneousPool(id, index, extra = {}) {
     ...extra});
 }
 function openProfileWeapon(h) {
-  h.nodes.weaponConfigured.click();const toggle=findField(h.nodes.weaponReview,'潜能配置修正');
+  h.nodes.weaponConfigured.click();const toggle=findField(h.nodes.weaponReview,'专武产出配置修正');
   if(!toggle.checked){toggle.checked=true;toggle.onchange();}
 }
 function weaponButtonActive(h){return h.nodes.weaponConfigured.getAttribute('aria-pressed')==='true';}
@@ -758,34 +758,47 @@ async function main() {
   });
   await test('weapon button opens a visible numeric correction table without enabling it',async()=>{
     const h=await loaded(),before=h.state();h.nodes.weaponConfigured.click();
-    assert(h.nodes.resultsDialog.open);assert.equal(findField(h.nodes.weaponReview,'潜能配置修正').checked,false);
-    assert(h.nodes.weaponReview.querySelector('table'));assert(findField(h.nodes.weaponReview,'总专武种类'));
+    assert(h.nodes.resultsDialog.open);assert.equal(findField(h.nodes.weaponReview,'专武产出配置修正').checked,false);
+    assert(h.nodes.weaponReview.textContent.includes('单池产出数量'));assert(findField(h.nodes.weaponReview,'有专武产出池数'));
     assert(!h.nodes.weaponReview.textContent.includes('平均专武'));assert(!h.nodes.weaponReview.querySelectorAll('input').some(n=>n.type==='text'));
     h.nodes.resultsCancel.click();h.flushTimers();await tick();assert.deepEqual(h.state(),before);assert.equal(h.pending.length,0);
   });
   await test('weapon Escape discards edited potential and lost draws',async()=>{
     const h=await loaded(),before=h.state();h.nodes.weaponConfigured.click();
-    setField(h.nodes.weaponReview,'总专武种类',1);setField(h.nodes.weaponReview,'亏损抽数',3);
-    assert(findField(h.nodes.weaponReview,'潜能配置修正').checked);escape(h.nodes.resultsDialog);
+    setField(h.nodes.weaponReview,'有专武产出池数',1);setField(h.nodes.weaponReview,'亏损抽数',3);
+    assert(findField(h.nodes.weaponReview,'专武产出配置修正').checked);escape(h.nodes.resultsDialog);
     h.flushTimers();await tick();assert.deepEqual(h.state(),before);assert.equal(h.pending.length,0);
   });
   await test('empty potential configuration blocks save and a filled zero-potential table saves',async()=>{
     const h=await loaded();openProfileWeapon(h);h.nodes.resultsApply.click();assert(h.nodes.resultsDialog.open);
-    setField(h.nodes.weaponReview,'总专武种类',1);h.nodes.resultsApply.click();h.flushTimers();await tick();
+    setField(h.nodes.weaponReview,'有专武产出池数',1);h.nodes.resultsApply.click();h.flushTimers();await tick();
     assert(!h.nodes.resultsDialog.open);assert.equal(h.pending.length,1);const w=h.pending[0].body.session.ledger.weapon;
     assert.deepEqual(w.potentialConfig,{totalTypes:1,counts:[0,0,0,0,0],overflowCopies:0});assert.equal(w.profile,null);
   });
-  await test('multiple full weapons save only after overflow allocations add up, then reopen exactly',async()=>{
+  await test('overflow has its own draft and persists only through the main weapon save',async()=>{
     const h=await loaded();h.ctx.loadSession(record('table-overflow',[pool()],{N:1100,K6:50,KU:14}));
-    h.nodes.weaponConfigured.click();const view=h.nodes.weaponReview;
-    setField(view,'总专武种类',2);setField(view,'5潜专武数量',2);setField(view,'溢出专武数量',3);
-    setField(view,'满潜专武1溢出份数',2);h.nodes.resultsApply.click();assert(h.nodes.resultsDialog.open);
-    assert(h.nodes.weaponDialogError.textContent.includes('溢出份数'));
-    setField(view,'满潜专武2溢出份数',1);setField(view,'亏损抽数',17);h.nodes.resultsApply.click();h.flushTimers();await tick();
+    h.nodes.weaponConfigured.click();const view=h.nodes.weaponReview,fields=h.nodes.weaponOverflowFields;
+    const before=h.state();
+    setField(view,'有专武产出池数',3);setField(view,'产出 6 份及以上的池数',2);
+    assert.equal(view.querySelector('output').textContent,'1');
+    setField(view,'有专武产出池数',2);assert.equal(view.querySelector('output').textContent,'0');
+    assert(!view.textContent.includes('溢出总份数'));
+    const overflow=findButton(view,'溢出配置');
+    overflow.click();assert(h.nodes.weaponOverflowDialog.open);
+    setField(fields,'溢出总份数',3);setField(fields,'第 1 池溢出份数',2);
+    h.nodes.applyWeaponOverflow.click();assert(h.nodes.weaponOverflowDialog.open);
+    assert.match(h.nodes.weaponOverflowError.textContent,/溢出份数之和/);
+    escape(h.nodes.weaponOverflowDialog);assert(h.nodes.resultsDialog.open);assert(!h.nodes.weaponOverflowDialog.open);
+    overflow.click();assert.equal(findField(fields,'溢出总份数').value,0);
+    setField(fields,'溢出总份数',3);setField(fields,'第 1 池溢出份数',2);setField(fields,'第 2 池溢出份数',1);
+    h.nodes.applyWeaponOverflow.click();assert(!h.nodes.weaponOverflowDialog.open);assert.deepEqual(h.state(),before);
+    assert(view.textContent.includes('已配置 3 份'));
+    setField(view,'亏损抽数',17);h.nodes.resultsApply.click();h.flushTimers();await tick();
     assert(!h.nodes.resultsDialog.open);const sent=h.pending[h.pending.length-1].body.session;
     assert.deepEqual(sent.ledger.weapon.potentialConfig,{totalTypes:2,counts:[0,0,0,0,2],overflowCopies:3,overflowByType:[2,1]});
     assert.equal(sent.ledger.weapon.lossDraws,17);h.pending[h.pending.length-1].resolve(sent);await tick();h.ctx.loadSession(sent);await tick();
-    h.nodes.weaponConfigured.click();assert.equal(findField(view,'满潜专武1溢出份数').value,2);assert.equal(findField(view,'满潜专武2溢出份数').value,1);
+    h.nodes.weaponConfigured.click();findButton(view,'溢出配置').click();
+    assert.equal(findField(fields,'第 1 池溢出份数').value,2);assert.equal(findField(fields,'第 2 池溢出份数').value,1);
   });
   await test('raw weapon corrections do not enable potential mode',async()=>{
     const h=await loaded();h.nodes.weaponConfigured.click();setField(h.nodes.weaponReview,'武器总抽数',70);
@@ -794,8 +807,8 @@ async function main() {
   });
   await test('old B/H80 and profile survive opening, and disabling clears only the potential selection',async()=>{
     const h=await loaded(),saved=record('legacy',[pool()],{N:60,K6:2,KU:1,B:1,H80:0,profile:'1'});
-    h.ctx.loadSession(saved);await tick();h.nodes.weaponConfigured.click();assert.equal(findField(h.nodes.weaponReview,'总专武种类').value,1);
-    const toggle=findField(h.nodes.weaponReview,'潜能配置修正');assert(toggle.checked);toggle.checked=false;toggle.onchange();
+    h.ctx.loadSession(saved);await tick();h.nodes.weaponConfigured.click();assert.equal(findField(h.nodes.weaponReview,'有专武产出池数').value,1);
+    const toggle=findField(h.nodes.weaponReview,'专武产出配置修正');assert(toggle.checked);toggle.checked=false;toggle.onchange();
     h.nodes.resultsApply.click();h.flushTimers();await tick();assert.equal(h.state().ledger.weapon.profile,null);
     assert.equal(h.state().ledger.weapon.H80,0);assert.equal(h.state().ledger.weapon.B,1);assert.equal(weaponButtonActive(h),false);
   });
@@ -1746,33 +1759,33 @@ async function main() {
     assert.equal(h.pending[0].body.session.ledger.character.pools[0].events[0].identitySource,'manual');
     assert.deepEqual(h.pending[0].body.session.documents,original);
   });
-  await test('multi-person import preserves independent records and failures with navigation through history',async()=>{
+  await test('sequential single-image imports create independent entries and reopen through history',async()=>{
     const h=harness();await tick();const a=record('person-a'),b=record('person-b');
     a.documents[0].file='甲.png';b.documents[0].file='乙.png';b.ledger.weapon={N:100,K6:4,KU:2};
-    const items=[{index:0,name:'甲.png',status:'done',sessionId:a.id},{index:1,name:'坏图.png',status:'error',error:'图片不完整'},
-      {index:2,name:'乙.png',status:'done',sessionId:b.id}];
-    h.replies.set('/api/import',{id:'batch'});h.replies.set('/api/jobs/batch',{status:'done',sessions:[a,b],session:a,items,failed:1,message:'完成'});
+    for(const item of [a,b]){
+      const name=item.documents[0].file;
+      h.replies.set('/api/import',{id:item.id});
+      h.replies.set('/api/jobs/'+item.id,{status:'done',session:item,message:'完成'});
+      h.ctx.selected([{name,size:10}]);await h.nodes.import.click();await tick();
+      assert.equal(h.state().id,item.id);assert.equal(h.nodes.recordTitle.textContent,name);
+      assert(h.nodes.status.textContent.includes('已导入 1 张截图'));
+    }
+    const requests=h.requests.filter(r=>r.url==='/api/import');
+    assert.deepEqual(requests.map(r=>r.body.files.map(f=>f.name)),[['甲.png'],['乙.png']]);
     h.replies.set('/api/sessions',[{id:a.id,name:'甲.png',updatedAt:1000},{id:b.id,name:'乙.png',updatedAt:1001}]);
-    h.ctx.selected([{name:'甲.png',size:10},{name:'坏图.png',size:10},{name:'乙.png',size:10}]);await h.nodes.import.click();await tick();
-    assert.equal(h.state().id,a.id);assert.equal(h.nodes.batchRecords,undefined);assert.equal(h.nodes.batchResults,undefined);
-    assert(h.nodes.error.textContent.includes('坏图.png：图片不完整'));assert(h.nodes.status.textContent.includes('2 份独立记录，1 张失败'));
-    assert.equal(h.nodes.recordTitle.textContent,'甲.png');
     const latest=structuredClone(b);latest.revision=3;latest.ledger.weapon.N=110;
     h.replies.set('/api/sessions/person-b',latest);h.nodes.openHistory.click();await tick();
     await h.nodes.history.querySelectorAll('button').find(n=>n.textContent.startsWith('乙.png')).click();await tick();
     assert.equal(h.state().id,b.id);assert.equal(h.state().revision,3);assert.equal(h.state().ledger.weapon.N,110);
-    assert.equal(h.nodes.recordTitle.textContent,'乙.png');
     assert.equal(h.state().documents.length,1);assert.equal(a.ledger.weapon.N,60);
   });
-  await test('all-failed batch keeps per-image reasons and never replaces the already opened record',async()=>{
-    const h=await loaded(),before=h.state();h.replies.set('/api/import',{id:'failed-batch'});
-    h.replies.set('/api/jobs/failed-batch',{status:'error',message:'全部失败',items:[
-      {index:0,name:'甲.png',status:'error',error:'不是支持的截图'},{index:1,name:'乙.png',status:'error',error:'文件无法读取'}]});
-    h.ctx.selected([{name:'甲.png',size:1},{name:'乙.png',size:1}]);await h.nodes.import.click();await tick();
+  await test('a failed single image reports its reason and keeps the open record',async()=>{
+    const h=await loaded(),before=h.state();h.replies.set('/api/import',{id:'failed-image'});
+    h.replies.set('/api/jobs/failed-image',{status:'error',message:'识别失败',items:[
+      {index:0,name:'甲.png',status:'error',error:'不是支持的截图'}]});
+    h.ctx.selected([{name:'甲.png',size:1}]);await h.nodes.import.click();await tick();
     assert.deepEqual(h.state(),before);assert(h.nodes.error.textContent.includes('甲.png：不是支持的截图'));
-    assert(h.nodes.error.textContent.includes('乙.png：文件无法读取'));assert.equal(h.nodes.batchRecords,undefined);
-    assert(h.nodes.status.textContent.includes('0 份独立记录，2 张失败'));
-    assert.equal(h.nodes.import.disabled,false);assert(h.nodes.error.textContent.includes('全部失败'));
+    assert(h.nodes.status.textContent.includes('导入失败'));assert.equal(h.nodes.import.disabled,false);
   });
   await test('home picker and dropzone accept TXT and JSON and use the text adapter',async()=>{
     const accept=html.match(/id="images"[^>]*accept="([^"]+)"/)[1].split(',');
@@ -1800,21 +1813,20 @@ async function main() {
     request.resolve({...saved,id:'restored-home'});await importing;
     assert.equal(h.state().id,'restored-home');
   });
-  await test('mixed image and record files stay independent and a failed text import does not discard success',async()=>{
-    const h=await loaded(),image=record('image-person'),text=record('text-person');
-    h.replies.set('/api/import',{id:'mixed-batch'});
-    h.replies.set('/api/jobs/mixed-batch',{status:'done',sessions:[image],failed:0,items:[],message:'完成'});
-    h.ctx.selected([{name:'image.png',size:10},{name:'bad.txt',size:10,text:async()=>'bad'},
-                    {name:'good.json',size:10,text:async()=>'{}'}]);
-    const importing=h.nodes.import.click();await tick();
-    const imageRequest=h.requests.find(r=>r.url==='/api/import');assert.equal(imageRequest.body.files.length,1);
-    const failed=h.pending.find(r=>r.url==='/api/records/import');assert.equal(failed.body.name,'bad.txt');
-    failed.reject(Error('无法识别此记录'));await tick();
-    const good=h.pending.filter(r=>r.url==='/api/records/import').at(-1);assert.equal(good.body.name,'good.json');
-    good.resolve(text);await importing;await tick();
-    assert.equal(h.state().id,image.id);assert(h.nodes.status.textContent.includes('2 份独立记录，1 项失败'));
-    assert(h.nodes.historyDeleteFeedback.textContent.includes('bad.txt'));assert(h.nodes.error.textContent.includes('无法识别此记录'));
-    assert(!h.nodes.import.disabled);
+  await test('a multi-file drop clears the previous selection without uploading either file',async()=>{
+    const h=await loaded(),before=h.state();
+    assert(!html.match(/<input id="images"[^>]*\bmultiple\b/));
+    assert(html.includes('请导入限定角色池长截图，其他池暂不支持视图'));
+    h.ctx.selected([{name:'previous.png',size:10}]);
+    h.nodes.images.value='previous.png';
+    h.nodes.dropzone.ondrop({preventDefault(){},dataTransfer:{files:[
+      {name:'image.png',size:10},{name:'record.json',size:10,text:async()=>'{}'}]}});
+    await h.nodes.import.onclick();
+    assert(h.nodes.import.disabled);
+    assert.equal(h.nodes.images.value,'');assert.equal(h.nodes.selection.textContent,'尚未选择文件');
+    assert(h.nodes.error.textContent.includes('一次只能导入一个文件'));
+    assert.equal(h.requests.filter(r=>r.url==='/api/import'||r.url==='/api/records/import').length,0);
+    assert.deepEqual(h.state(),before);
   });
   await test('unsupported home selections fail before submitting any files',async()=>{
     const h=await loaded(),before=h.state();h.ctx.selected([{name:'not-a-record.exe',size:10}]);
@@ -1830,14 +1842,12 @@ async function main() {
     h.advanceTimers(4000);assert(h.nodes.recordFormatDialog.open);
     h.staticNodes.find(n=>n.dataset.closeDialog==='recordFormatDialog').click();assert(!h.nodes.recordFormatDialog.open);
   });
-  await test('a format popup survives successful files later in the same batch',async()=>{
-    const h=await loaded();h.ctx.selected([{name:'future.txt',size:10,text:async()=>'unknown'},
-                                         {name:'valid.json',size:10,text:async()=>'{}'}]);
-    const importing=h.nodes.import.click();await tick();
-    h.pending.find(r=>r.url==='/api/records/import').resolve({error:'暂不支持此记录格式，请联系作者协助适配。',code:'record_format_unrecognized'},false);
-    await tick();h.pending.filter(r=>r.url==='/api/records/import').at(-1).resolve(record('valid-after-failure'));
-    await importing;assert.equal(h.state().id,'valid-after-failure');assert(h.nodes.recordFormatDialog.open);
-    assert(h.nodes.recordFormatFiles.textContent.includes('future.txt'));assert(h.nodes.status.textContent.includes('1 份独立记录，1 项失败'));
+  await test('the history picker also rejects a multi-file selection before restoring a record',async()=>{
+    const h=await loaded(),before=h.state();
+    await h.nodes.restoreFile.onchange({target:{value:'',files:[{name:'a.txt'},{name:'b.json'}]}});
+    assert(h.nodes.historyDeleteFeedback.textContent.includes('一次只能导入一个文件'));
+    assert.equal(h.requests.filter(r=>r.url==='/api/restore'||r.url==='/api/records/import').length,0);
+    assert.deepEqual(h.state(),before);
   });
   await test('rapid person switches ignore an older history response',async()=>{
     const h=await loaded(),first=h.ctx.openSavedSession('slow-a'),second=h.ctx.openSavedSession('fast-b');await tick();
@@ -1982,10 +1992,10 @@ async function main() {
     const h=await validationHarness();h.nodes.resultsCancel.click();h.nodes.weaponConfigured.click();
     const input=findField(h.nodes.weaponReview,'当期专武数');input.value='3';input.oninput({target:input});
     assert(h.nodes.weaponReview.textContent.includes('当期专武数量不能超过六星武器数量'));
-    input.value='1';input.oninput({target:input});const total=findField(h.nodes.weaponReview,'总专武种类');
+    input.value='1';input.oninput({target:input});const total=findField(h.nodes.weaponReview,'有专武产出池数');
     total.value='1';total.oninput({target:total});const request=await validationRequest(h);
     assert.equal(request.body.session.ledger.weapon.potentialConfig.totalTypes,1);
-    request.resolve({ledger:clearValidation(request)});await tick();assert.equal(findField(h.nodes.weaponReview,'总专武种类'),total);
+    request.resolve({ledger:clearValidation(request)});await tick();assert.equal(findField(h.nodes.weaponReview,'有专武产出池数'),total);
   });
   await test('each queue save refreshes committed issues and removes resolved future pages',async()=>{
     const saved=record('save-live',[erroneousPool('first',0),erroneousPool('second',1)]);
@@ -2651,9 +2661,14 @@ async function main() {
   await test('reopening the weapon form displays each old overflow distribution and discards cancelled edits',async()=>{
     const h=await loaded(),saved=record('weapon-navigation',[pool()],{N:1800,K6:50,KU:15,B:1,profile:'3 7 5 1'});
     h.ctx.loadSession(saved);await tick();const before=h.state();h.nodes.weaponConfigured.click();
-    const view=h.nodes.weaponReview;assert.equal(findField(view,'5潜专武数量').value,2);
-    assert.equal(findField(view,'满潜专武1溢出份数').value,2);setField(view,'亏损抽数',25);setField(view,'总专武种类',4);
-    h.nodes.resultsCancel.click();h.nodes.weaponConfigured.click();assert.equal(findField(view,'总专武种类').value,3);
+    const view=h.nodes.weaponReview;assert.equal(findField(view,'产出 6 份及以上的池数').value,2);
+    findButton(view,'溢出配置').click();
+    assert.equal(findField(h.nodes.weaponOverflowFields,'第 1 池溢出份数').value,2);
+    setField(h.nodes.weaponOverflowFields,'第 1 池溢出份数',9);
+    escape(h.nodes.weaponOverflowDialog);findButton(view,'溢出配置').click();
+    assert.equal(findField(h.nodes.weaponOverflowFields,'第 1 池溢出份数').value,2);
+    escape(h.nodes.weaponOverflowDialog);setField(view,'亏损抽数',25);setField(view,'有专武产出池数',4);
+    h.nodes.resultsCancel.click();h.nodes.weaponConfigured.click();assert.equal(findField(view,'有专武产出池数').value,3);
     assert.equal(findField(view,'亏损抽数').value,'');escape(h.nodes.resultsDialog);assert.deepEqual(h.state(),before);
   });
   await test('weapon navigation guards unavailable data and in-flight writes even when invoked directly',async()=>{
