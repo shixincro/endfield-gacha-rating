@@ -214,6 +214,13 @@ button.danger{color:#a63c32;border-color:#d1a099}button.danger:hover{background:
   font-size: 13px;
   white-space: nowrap;
 }
+.tutorial-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
 
 /* Result cards use a neutral canvas with color reserved for the readouts. */
 :root{--loss-red:#c5163d;--gain-green:#007b46;--measure-neutral:#57636a}

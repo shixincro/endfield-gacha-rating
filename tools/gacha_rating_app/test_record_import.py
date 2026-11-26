@@ -59,6 +59,16 @@ class RecordImportTests(unittest.TestCase):
         self.assertFalse(session['ledger']['character']['completeHistory'])
         self.assertTrue(any('没有抽取序号' in w for w in session['importSummary']['warnings']))
 
+    def test_official_batches_recognize_huitu_and_ziyou_signature_weapons(self):
+        pools = [('绘涂申领', '艺术暴君'), ('点绘申领', '艺术暴君'), ('恣游申领', '甜美交易')]
+        source = {f'{i}.01': {'p': banner, 'pi': f'weapon-{i}', 'ci': '__weapon', 'seq': str(i * 10),
+                              'c': [[up, 5, 1]] + [['四星武器', 3, 0] for _ in range(9)]}
+                  for i, (banner, up) in enumerate(pools, 1)}
+        session = convert(source)
+        weapon = session['ledger']['weapon']
+        self.assertEqual((weapon['N'], weapon['K6'], weapon['KU']), (30, 3, 3))
+        self.assertEqual([(section['banner'], section['up']) for section in weapon['sections']], pools)
+
     def test_api_json_inside_txt_and_sixty_ticket(self):
         rows=[api_row(n) for n in range(1,61)]
         rows[39]['charName']='莱万汀';rows[39]['rarity']=6
