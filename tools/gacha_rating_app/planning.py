@@ -1,11 +1,7 @@
-"""Retrospective, per-banner planning loss using the user's fixed water table.
-
-This is not a counterfactual replay of the account. Pool rows retain signed loss;
-complete records display signed net loss directly, with user-defined loss bands.
-No random simulation or interpolation is used. Input is the normalized ledger.
-"""
+"""Exact per-banner planning loss for a normalized historical ledger."""
 from __future__ import annotations
 
+from collections import Counter
 import hashlib
 import json
 import math
@@ -15,7 +11,7 @@ import actual_loss
 import opportunity
 
 # Stored ratings need recalculation when any of the three algorithms changes.
-VERSION = f"planning-three-losses-v3.1+{actual_loss.VERSION}+{opportunity.VERSION}"
+VERSION = f"planning-three-losses-v4.0+{actual_loss.VERSION}+{opportunity.VERSION}"
 TABLE_FILE = Path(__file__).with_name("water_values.json")
 
 
@@ -85,18 +81,27 @@ def _next_is_contiguous(first, second):
             and second["index"] == first["index"] + 1)
 
 
-def _pool_free(pool, previous):
+def _known_empty_gap(previous, pool, character):
+    return (previous is not None and not pool.get('interruptionBefore')
+            and character.get('completeHistory') is True
+            and _integer(previous.get('index')) and _integer(pool.get('index'))
+            and pool['index'] > previous['index'] + 1)
+
+
+def _pool_free(pool, previous, character):
     if _integer(pool.get("freeAllowance")) and pool["freeAllowance"] in (0, 10, 20):
-        return pool["freeAllowance"], "explicit"
+        return int(pool["freeAllowance"]), "explicit"
     if previous is not None and _next_is_contiguous(previous, pool) and _integer(previous.get("total")):
         return (20 if previous["total"] >= 60 else 10), "previous-banner-60-node"
+    if _known_empty_gap(previous, pool, character):
+        return 10, "known-skipped-banner"
     # Index zero is the first banner in the game, not the first uploaded row.
     if pool.get("index") == 0:
         return 10, "launch-banner-default"
     return None, "unknown-previous-banner"
 
 
-def _row(pool, previous, character, values, acquisition_context=None):
+def _source_row(pool, previous, character, prior_pity):
     row = {"id": pool.get("id"), "banner": pool.get("banner"), "index": pool.get("index"),
            "total": pool.get("total"),
            "status": "partial", "warnings": [], "localLoss": None,
@@ -106,7 +111,7 @@ def _row(pool, previous, character, values, acquisition_context=None):
            "missedFree": None, "branch": None, "anchor": None, "idealStop": None}
     warnings = row["warnings"]
     total = pool.get("total")
-    free, free_source = _pool_free(pool, previous)
+    free, free_source = _pool_free(pool, previous, character)
     row["freeAllowance"] = free
     row["freeSource"] = free_source
     row.update(ended=True, endedSource="recorded-stop")
@@ -159,8 +164,11 @@ def _row(pool, previous, character, values, acquisition_context=None):
     initial = pool.get("initialPity")
     if initial is None and pool is character["pools"][0]:
         initial = character.get("initialPity")
-    if initial is None and previous is not None and _next_is_contiguous(previous, pool):
+    if initial is None and previous is not None and (
+            _next_is_contiguous(previous, pool) or _known_empty_gap(previous, pool, character)):
         initial = previous.get("tail")
+        if initial is None:
+            initial = prior_pity
     last = 0
     for event in events:
         waiting = event["at"] - last + (initial if last == 0 and _integer(initial, 0, 79) else 0)
@@ -223,95 +231,162 @@ def _row(pool, previous, character, values, acquisition_context=None):
             return row
         if any(e["character"] == up for e in rush):
             anchors.append({"at": at, "source": "rush"})
-    if acquisition_context is not None:
-        new_hits = acquisition_context['newLimitedHits']
-        unknown = acquisition_context['unknownNewPositions']
-        anchors.extend({**hit, "kind": "new-limited"} for hit in new_hits)
-        row.update(newLimitedHits=new_hits, unknownNewPositions=unknown,
-                   effectiveAcquisitions=anchors)
-        if any(at > max(free, max((e['at'] for e in anchors), default=-1)) for at in unknown):
-            warnings.append("最后有效收获之后的歪限定New状态未知，无法确定理想停点")
-            return row
-    if anchors:
-        # All copies and tokens count. Do not invent a full-potential overflow exception.
-        anchor = max(anchors, key=lambda e: (e["at"], e["source"] == "token"))
-        # Free draws must be exhausted even after an early effective acquisition.
-        # Their carry-over water is the baseline, not a negative-consumption gain.
-        stop = max(free, 60 if 46 <= anchor["at"] <= 59 else anchor["at"])
-        row.update(branch="last-effective" if anchor.get('kind') == 'new-limited' else "last-up",
-                   anchor=anchor, idealStop=stop)
-        if anchor['at'] < free:
-            row['stopRule'] = 'complete-free-allowance'
-            row['reason'] = f"第{anchor['at']}抽已获有效收获，仍应用完本池{free}抽免费额度；剩余免费抽不计额外收益。"
-    else:
-        stop = free
-        row.update(branch="free-only-skip", idealStop=stop)
-    missing_pity = max(stop - total, 0)
-    row["missingPity"] = missing_pity
-    # A user-defined asset valuation, not simulated future pulls. Extend the
-    # observed ending pity without adding events or changing later real pools.
-    ref_pity = (actual_pity + missing_pity if actual_pity is not None else None) if missing_pity else _pity_at(stop, events, initial)
-    row["referencePitySource"] = ("early-stop-water-extension" if missing_pity else "observed-history")
-    if ref_pity is None or actual_pity is None:
-        warnings.append("参考或实际期末水位未知")
+    if actual_pity is None:
+        warnings.append("实际期末水位未知")
         return row
-    if not _integer(ref_pity, 0, 79):
-        warnings.append("提前停手的水位估值超出合法0–79范围，未外推" if missing_pity else "参考停点水位超出0–79，疑有漏读六星")
-        return row
-    actual_perm, ref_perm = max(total - free, 0), max(stop - free, 0)
-    # Default is free-first. Explicit source-attributed late free draws can override
-    # the permanent subtotal, without pretending OCR established payment timing.
     attribution = pool.get("freeDrawPositions")
-    if attribution is not None:
-        if (not isinstance(attribution, list)
-                or any(not _integer(x, 1, total) for x in attribution)
-                or len(attribution) != len(set(attribution))
-                or len(attribution) != min(total, free)):
-            warnings.append("限时免费抽位置列表无效")
-            return row
-        actual_perm = total - len(attribution)
-        # Positions contain observed draws only. Remaining free allowance up to
-        # a later reference stop is free too, not an invented paid expenditure.
-        reference_unused_free = min(missing_pity, max(free - total, 0))
-        ref_perm = stop - sum(x <= stop for x in attribution) - reference_unused_free
-        row["spendSource"] = "explicit-free-positions"
-    else:
-        row["spendSource"] = "free-first-default"
-    row["actual"] = {"stop": total, "pity": actual_pity, "permanent": actual_perm,
-                     "nextFree": 20 if total >= 60 else 10}
-    row["reference"] = {"stop": stop, "pity": ref_pity, "permanent": ref_perm,
-                        "nextFree": 20 if stop >= 60 else 10,
-                        "pityIsValuation": bool(missing_pity)}
-    row["permanentDelta"] = actual_perm - ref_perm
-    if actual_pity == ref_pity and row["actual"]["nextFree"] == row["reference"]["nextFree"]:
-        # Exact cancellation needs no extrapolated value, even outside the table.
-        water_delta = reward_delta = 0.0
-    else:
-        if actual_pity not in values or ref_pity not in values:
-            warnings.append("固定水位表缺少本池所需水位，未外推")
-            return row
-        a, r = values[actual_pity], values[ref_pity]
-        water_delta = r["free10"] - a["free10"]
-        actual_reward = a["free10"] - a["free20"] if total >= 60 else 0.0
-        ref_reward = r["free10"] - r["free20"] if stop >= 60 else 0.0
-        reward_delta = actual_reward - ref_reward
-        row["actual"]["futureCost"] = a["free20" if total >= 60 else "free10"]
-        row["reference"]["futureCost"] = r["free20" if stop >= 60 else "free10"]
-    row.update(waterValueDelta=water_delta, rewardValueDelta=reward_delta,
-               localLoss=(actual_perm - ref_perm) - water_delta - reward_delta,
-               status="ok")
-    if missing_pity:
-        row["reason"] = (f"提前停手少积累{missing_pity}抽水位，估值参考水位{actual_pity}→{ref_pity}；"
-                         + ("漏用免费抽按水位表价值差计损。" if row["branch"] == "free-only-skip" else
-                            "合并少花的永久抽、水位和60节点赠券价值净差。")
-                         + "参考水位仅用于规划估值，不代表实际补抽或预测出货。")
+    if attribution is not None and (not isinstance(attribution, list)
+            or any(not _integer(x, 1, total) for x in attribution)
+            or len(attribution) != len(set(attribution))
+            or len(attribution) != min(total, free)):
+        warnings.append("限时免费抽位置列表无效")
+        return row
+    row["spendSource"] = "explicit-free-positions" if attribution is not None else "free-first-default"
+    row["actual"] = {"stop": total, "pity": int(actual_pity),
+                     "permanent": max(total - free, 0), "nextFree": 20 if total >= 60 else 10}
+    row.update(status="ok", _events=events, _anchors=anchors, _initial=initial)
     return row
 
 
-def score_planning(character: dict) -> dict:
-    """Evaluate independent local comparisons; never mutate the input ledger."""
+def _known_copies(timeline, known_opening, stop):
+    counts = known_opening.copy()
+    for at, _, name in timeline:
+        if at > stop:
+            break
+        if name in actual_loss.LIMITED:
+            counts[name] = min(counts.get(name, 0) + 1, opportunity.FULL_POTENTIAL_COPIES)
+    return dict(counts)
+
+
+def _reference_stop(row, pool, known_opening, owned, ownership_known):
+    """Keep source validation independent from the candidate stopping rule."""
+    events, anchors, initial = (row.pop(key) for key in ("_events", "_anchors", "_initial"))
+    total, free, up = row["actual"]["stop"], row["freeAllowance"], pool["up"]
+    timeline = [(int(event['at']), 'main', event['character']) for event in events]
+    timeline.extend((int(row['rushAt']), 'rush', event['character']) for event in pool.get('rush', []))
+    timeline.extend((int(token['at']), 'token', up) for token in pool.get('tokens', []))
+    timeline.sort(key=lambda event: (event[0], event[1] != 'main'))
+
+    known_copies = Counter(known_opening)
+    limited_hits, new_hits, unknown_new = [], [], []
+    rush_targets = []
+    for at, source, name in timeline:
+        if (source != 'token' and name != up and name in actual_loss.LIMITED
+                and known_copies[name] < opportunity.FULL_POTENTIAL_COPIES):
+            new = name not in owned
+            hit = {'at': at, 'character': name, 'source': source}
+            if new and ownership_known:
+                new_hits.append(hit)
+                hit = {**hit, 'kind': 'new-limited'}
+            else:
+                if new:
+                    unknown_new.append(at)
+                hit['kind'] = 'limited'
+            limited_hits.append(hit)
+        if source == 'rush' and (name == up or (
+                name in actual_loss.LIMITED and known_copies[name] < opportunity.FULL_POTENTIAL_COPIES)):
+            rush_targets.append((at, name))
+        owned.add(name)
+        if name in actual_loss.LIMITED:
+            known_copies[name] = min(known_copies[name] + 1, opportunity.FULL_POTENTIAL_COPIES)
+
+    natural_up = [anchor for anchor in anchors if anchor['source'] == 'main']
+    tokens = [anchor for anchor in anchors if anchor['source'] == 'token']
+    main_limited = [anchor for anchor in limited_hits if anchor['source'] == 'main']
+    effective = natural_up + tokens if natural_up else anchors + limited_hits
+    row.update(newLimitedHits=new_hits, unknownNewPositions=unknown_new,
+               effectiveAcquisitions=effective)
+    if natural_up:
+        at = int(natural_up[0]['at'])
+        row['target'] = {'kind': 'first-up', 'at': at,
+                         'rush': not any(t < at and name == up for t, name in rush_targets)}
+    elif main_limited:
+        at = main_limited[0]['at']
+        row['target'] = {'kind': 'first-effective-limited', 'at': at,
+                         'rush': not any(t < at for t, _ in rush_targets)}
+    else:
+        row['target'] = None
+
+    row['actual']['copies'] = dict(known_copies)
+    anchor = max(effective, key=lambda hit: (hit['at'], hit['source'] == 'token',
+                                            hit['source'] == 'main'), default=None)
+    if anchor is None:
+        stop = free
+        row.update(branch="free-only-skip", idealStop=stop)
+    else:
+        at = int(anchor["at"])
+        stop = max(free, 60 if 46 <= at <= 59 else at)
+        row.update(branch="last-effective" if anchor.get('kind') else "last-up",
+                   anchor=anchor, idealStop=stop)
+        if at < free:
+            row['stopRule'] = 'complete-free-allowance'
+            row['reason'] = f"第{at}抽已获有效收获，仍应用完本池{free}抽免费额度。"
+
+    missing = max(stop - total, 0)
+    row["missingPity"] = missing
+    row["referencePitySource"] = "early-stop-weighted" if missing else "observed-history"
+    if missing:
+        candidates = actual_loss.off_candidates(int(pool['index'])) if _integer(
+            pool.get('index'), 0, len(actual_loss.SCHEDULE) - 1) else ()
+        endpoints = actual_loss.ending_states(row["actual"]["pity"], missing,
+                                               known_copies, up, candidates)
+        states = [{"pity": pity, "copies": dict(copies), "probability": probability}
+                  for pity, copies, probability in endpoints]
+        row["reason"] = f"参考继续抽{missing}次，按出货概率加权其尾水和图鉴。"
+    else:
+        ref_pity = _pity_at(stop, events, initial)
+        if not _integer(ref_pity, 0, 79):
+            row["warnings"].append("参考期末水位未知或超出0–79")
+            row["status"] = "partial"
+            return known_copies
+        states = [{"pity": int(ref_pity),
+                   "copies": _known_copies(timeline, known_opening, stop),
+                   "probability": 1.0}]
+
+    ref_perm = max(stop - free, 0)
+    if pool.get("freeDrawPositions") is not None:
+        # Only the reference extension can use the not-yet-used free allowance.
+        free_used = sum(x <= stop for x in pool["freeDrawPositions"])
+        ref_perm = stop - free_used - min(missing, max(free - total, 0))
+    pities = {state["pity"] for state in states}
+    row["reference"] = {"stop": stop, "pity": next(iter(pities)) if len(pities) == 1 else None,
+                        "permanent": int(ref_perm), "nextFree": 20 if stop >= 60 else 10,
+                        "copies": states[0]["copies"] if len(states) == 1 else None,
+                        "states": states, "pityIsValuation": bool(missing)}
+    row["permanentDelta"] = row["actual"]["permanent"] - ref_perm
+    return known_copies
+
+
+def _quote_future(row, following, next_pool_index):
+    target = following.get('target') if following else None
+    target = target or {'kind': 'first-up', 'at': None, 'rush': True}
+    use_limited = (target['kind'] == 'first-effective-limited'
+                   and _integer(next_pool_index, 0, len(actual_loss.SCHEDULE) - 1))
+    row['nextTarget'] = dict(target, index=next_pool_index)
+
+    def paid(state, free):
+        eligible = actual_loss.eligible_off_count(int(next_pool_index), state['copies']) if use_limited else 0
+        return actual_loss.expected_paid(state['pity'], free, eligible, rush=target['rush'])
+
+    actual, reference = row['actual'], row['reference']
+    actual_base = paid(actual, 10)
+    actual_paid = actual_base if actual['nextFree'] == 10 else paid(actual, actual['nextFree'])
+    ref_base = math.fsum(state['probability'] * paid(state, 10)
+                        for state in reference['states'])
+    ref_paid = ref_base if reference['nextFree'] == 10 else math.fsum(
+        state['probability'] * paid(state, reference['nextFree']) for state in reference['states'])
+    water_delta = ref_base - actual_base
+    reward_delta = (actual_base - actual_paid) - (ref_base - ref_paid)
+    local_loss = row['permanentDelta'] + actual_paid - ref_paid
+    row['actual']['futureCost'] = actual_paid
+    row['reference']['futureCost'] = ref_paid
+    row.update(waterValueDelta=water_delta, rewardValueDelta=reward_delta,
+               localLoss=0.0 if abs(local_loss) < 1e-12 else local_loss)
+
+
+def build_reference_rows(character: dict) -> dict:
+    """Build planning references without invoking realized settlement."""
     table = json.loads(TABLE_FILE.read_text(encoding="utf-8"))
-    values = {r["pity"]: r for r in table["rows"]}
     result = {"version": VERSION, "tableVersion": table["version"], "tableSource": table["source"],
               "pools": [], "summary": {}, "warnings": []}
     if not isinstance(character, dict) or not isinstance(character.get("pools"), list):
@@ -325,52 +400,48 @@ def score_planning(character: dict) -> dict:
            for a, b in zip(pools, pools[1:])):
         result["warnings"].append("角色卡池必须按不重复的时间顺序排列")
         return result
-    result['actualLoss'] = actual_loss.score_actual_loss(character)
-    from collections import Counter
-    from importer import BANNERS
-    limited = set(BANNERS.values())
+
     initial_owned = character.get('initialOwned')
     ownership_known = isinstance(initial_owned, list) and all(isinstance(n, str) and n for n in initial_owned)
     owned = set(initial_owned) if ownership_known else set()
-    known_copies = Counter(owned)  # the opening catalog proves ownership, not potential
+    known_copies = Counter(owned & actual_loss.LIMITED)
+    prior_pity = None
     for i, pool in enumerate(pools):
-        previous = pools[i-1] if i else None
-        if pool.get('interruptionBefore') or (previous is not None and not _next_is_contiguous(previous, pool) and not character.get('completeHistory')):
+        previous = pools[i - 1] if i else None
+        if pool.get('interruptionBefore') or (previous is not None
+                and not _next_is_contiguous(previous, pool) and not character.get('completeHistory')):
             ownership_known = False
         if pool.get('interruptionBefore'):
             catalog = pool.get('interruptionCatalog') or {}
-            owned.update(catalog.get('ownedSixStars', []))
-            for name in catalog.get('ownedSixStars', []):
-                known_copies[name] = max(1, known_copies[name])
+            names = catalog.get('ownedSixStars', [])
+            owned.update(names)
+            for name in names:
+                if name in actual_loss.LIMITED:
+                    known_copies[name] = max(1, known_copies[name])
             ownership_known = catalog.get('catalogComplete') is True
-        # Validate the original resource ledger first. New uncertainty is an A-only
-        # ambiguity, not a source conflict, and must not suppress a valid B quote.
-        source_row = _row(pool, previous, character, values)
-        context = {'newLimitedHits': [], 'unknownNewPositions': []}
-        if source_row['status'] != 'partial':
-            hits = [(e, e['at'], 'main') for e in pool['events']]
-            hits += [(e, source_row.get('rushAt', 30), 'rush') for e in pool.get('rush', [])]
-            for event, at, source in sorted(hits, key=lambda hit: (hit[1], hit[2] == 'rush')):
-                name = event['character']
-                if name in limited and name != pool['up'] and name not in owned:
-                    if ownership_known:
-                        context['newLimitedHits'].append({'at': at, 'character': name, 'source': source})
-                    else:
-                        context['unknownNewPositions'].append(at)
-                owned.add(name)
-                if name in limited:
-                    known_copies[name] += 1
-            known_copies[pool['up']] += len(pool.get('tokens', []))
-            row = _row(pool, previous, character, values, context)
+
+        row = _source_row(pool, previous, character, prior_pity)
+        source_status = row['status']
+        prior_pity = row.get('actual', {}).get('pity')
+        if source_status == 'ok':
+            known_copies = _reference_stop(row, pool, known_copies, owned, ownership_known)
         else:
-            row = source_row
             # Missing source events can hide prior ownership in subsequent pools.
             ownership_known = False
-        row['opportunity'] = opportunity.quote(pool, source_row, known_copies[pool.get('up')])
-        if row['status'] == 'ok':
-            row['exemptedLoss'] = max(row['localLoss'], 0) if row['planningExempt'] else 0
-            row['countedLoss'] = row['localLoss'] - row['exemptedLoss']
+        up = pool.get('up')
+        target_copies = known_copies[up] if isinstance(up, str) else 0
+        row['opportunity'] = opportunity.quote(pool, {**row, 'status': source_status}, target_copies)
         result['pools'].append(row)
+
+    for i, (pool, row) in enumerate(zip(pools, result['pools'])):
+        if row['status'] != 'ok':
+            continue
+        following = (result['pools'][i + 1] if i + 1 < len(pools)
+                     and _next_is_contiguous(pool, pools[i + 1]) else None)
+        next_index = int(pool['index']) + 1 if _integer(pool.get('index')) else None
+        _quote_future(row, following, next_index)
+        row['exemptedLoss'] = max(row['localLoss'], 0) if row['planningExempt'] else 0
+        row['countedLoss'] = row['localLoss'] - row['exemptedLoss']
     completed = [r for r in result["pools"] if r["status"] == "ok"]
     total = sum(r["countedLoss"] for r in completed)
     complete = bool(pools) and len(completed) == len(pools) and math.isfinite(total)
@@ -390,7 +461,7 @@ def score_planning(character: dict) -> dict:
         "score": None,
         **(loss_title(total) if complete else {"lossTier": None, "title": None}),
         "scoreRule": "直接显示已结束卡池计入的有符号净亏损抽数，越低越好；豁免只免除所选池的正亏损，负收益保留，不从120倒扣。完整记录按未四舍五入计入值分为≤20、(20,60]、(60,120]、(120,240]、>240抽五档；缺项不生成称号。",
-        "note": "有符号合计汇总已结束且可计算的局部净差，有未算项时为部分合计，不是全账号重规划反事实亏损。早于最优停点时，以真实尾水加未到停点的抽数作为估值水位；漏用免费抽的水位价值差纳入亏损，补60仍合并永久抽、水位与赠券净差，不重复另扣漏用抽数。",
+        "note": "按停点永久抽差与后续目标的期望自费差合计。尚未抽到参考停点时按真实六星概率扩展参照，并按各分支的尾水、图鉴和赠券计算期望。",
     }
     quotes = [r['opportunity'] for r in result['pools']]
     known = [q['value'] for q in quotes if q['status'] == 'ok' and math.isfinite(q['value'])]
@@ -403,4 +474,19 @@ def score_planning(character: dict) -> dict:
         'complete': bool(pools) and len(known) == len(pools) and math.isfinite(quoted_sum),
         'approximate': True, 'note': '机会亏损独立展示，主称号沿用期望亏损。',
     }
+    return result
+
+
+def score_planning(character: dict) -> dict:
+    """Score all three metrics without changing normalized records."""
+    result = build_reference_rows(character)
+    if result['summary']:
+        result['actualLoss'] = actual_loss.score_actual_loss(character, reference_rows=result['pools'])
+        # Branch identities are used inside the scorer; a saved result only
+        # needs the aggregate valuation and its explanation.
+        for row in result['pools']:
+            row.get('actual', {}).pop('copies', None)
+            reference = row.get('reference', {})
+            reference.pop('copies', None)
+            reference.pop('states', None)
     return result

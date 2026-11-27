@@ -191,6 +191,8 @@ def from_documents(data):
     if (not isinstance(documents, list) or not 1 <= len(documents) <= 12
             or any(not isinstance(document, dict) for document in documents)):
         raise ValueError('识图结果不完整，请重新导入截图。')
+    for document in documents:
+        state['importer'].validate_screenshot_import(document)
     documents = copy.deepcopy(documents)
     session = {
         'schemaVersion': SESSION_SCHEMA,
@@ -261,7 +263,7 @@ def dispatch(request):
 
 
 def dispatch_json(text):
-    """Stable JSON-only entry point. Unknown formats retain their UI error code."""
+    """Stable JSON-only entry point, including import guidance codes."""
     try:
         if not isinstance(text, str) or len(text) > MAX_REQUEST_TEXT:
             raise ValueError('浏览器计算请求过大或格式无效。')
@@ -269,6 +271,7 @@ def dispatch_json(text):
         return json.dumps({'ok': True, 'value': result}, ensure_ascii=False, allow_nan=False)
     except Exception as exc:
         result = {'ok': False, 'error': str(exc)[:1000]}
-        if getattr(exc, 'code', None) == 'record_format_unrecognized':
+        if getattr(exc, 'code', None) in ('record_format_unrecognized',
+                                         'screenshot_missing_summary', 'screenshot_weapon_pool'):
             result['code'] = exc.code
         return json.dumps(result, ensure_ascii=False, allow_nan=False)

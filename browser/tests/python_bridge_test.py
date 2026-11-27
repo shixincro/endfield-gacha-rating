@@ -179,6 +179,18 @@ class BrowserPythonBridgeTests(unittest.TestCase):
         expected_ledger = importer.revalidate_current_ledger(self.demo['documents'], expected_ledger)
         self.assertEqual(result['ledger'], expected_ledger)
 
+    def test_from_documents_preserves_screenshot_guidance_codes(self):
+        rejected = [
+            ({'kind': 'character', 'overview': {'character': {'N': None}}}, 'screenshot_missing_summary'),
+            ({'kind': 'weapon'}, 'screenshot_weapon_pool'),
+        ]
+        for document, code in rejected:
+            with self.subTest(code=code):
+                request = {'op': 'from_documents', 'data': {'documents': [document]}}
+                response = json.loads(bridge.dispatch_json(json.dumps(request)))
+                self.assertFalse(response['ok'])
+                self.assertEqual(response['code'], code)
+
     def test_javascript_weapon_callback_and_error_handling(self):
         calls = []
         def weapon(text):

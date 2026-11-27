@@ -1,7 +1,7 @@
 'use strict';
 
 // Keep this literal: server.py exposes it so opened history is recalculated.
-const VERSION = 'character-abc-flat-v4-new-weight';
+const VERSION = 'character-abc-flat-v6-effective-output-weight';
 const ledger = require('./character_ledger');
 const {scoreResults} = require('./character_result_score');
 const {scoreCharacterFlatABC} = require('../character_abc_score/flat_score');

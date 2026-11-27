@@ -69,7 +69,8 @@ def build_site(output):
         shutil.copytree(vendor/name, output/'vendor'/name,dirs_exist_ok=True)
     shutil.copy2(vendor/'runtime-manifest.json',output/'vendor/runtime-manifest.json')
     source=ROOT/'tools/gacha_rating_app/static'
-    for name in ['app.js','ui-model.js','character-edit.js','manual-supplement.js','style.css']:
+    for name in ['app.js','ui-model.js','character-edit.js','manual-supplement.js','style.css',
+                 'screenshot-summary-example.png']:
         shutil.copy2(source/name,output/name)
     html=(source/'index.html').read_text(encoding='utf-8')
     html=re.sub(r'<script defer src="/[^"]+"></script>','',html)

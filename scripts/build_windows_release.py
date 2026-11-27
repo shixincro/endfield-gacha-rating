@@ -22,9 +22,9 @@ APPLICATION_FILES={
         'character_up_score.js','character_up_dp.js','character_six_count.js','character_limited_count.js',
         'character_up_reference.json','water_values.json','CHARACTER_SCORING.txt',
         'static/index.html','static/style.css','static/app.js','static/ui-model.js',
-        'static/character-edit.js','static/manual-supplement.js'],
+        'static/character-edit.js','static/manual-supplement.js','static/screenshot-summary-example.png'],
     'character_five_score':['scorer.js','parameters.json'],
-    'character_abc_score':['flat_score.js','flat_a.js','flat_b.js','flat_b_stop.js','flat_new.js','ledger.js'],
+    'character_abc_score':['flat_score.js','flat_a.js','flat_b.js','flat_b_stop.js','flat_new.js','flat_potential.js','ledger.js'],
     'weapon_score_v2':['average_inference.py','potential_profile_score.py','ten_pool_reference.py','scorer.py'],
     'gacha_ocr_prototype':['recognize.py','avatar_locator.py','avatar_match.py','header_avatar.py','assets/manifest.json'],
 }

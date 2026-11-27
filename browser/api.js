@@ -101,6 +101,7 @@ export class BrowserRatingAPI {
       }catch(error){
         job.failed=1;job.status='error';job.message='未能识别这张截图。';
         Object.assign(item,{status:'error',error:error.message});
+        if(error.code)item.code=error.code;
       }
       job.items.push(item);job.completed=1;
       // Bound job memory; persistent history lives in IndexedDB.

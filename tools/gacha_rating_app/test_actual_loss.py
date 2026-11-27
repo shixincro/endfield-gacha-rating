@@ -27,25 +27,80 @@ def score(*pools, **settings):
 
 
 class ActualLossTests(unittest.TestCase):
-    def test_simple_120_excess_and_voucher(self):
-        for a_up, total, expected in [(20, 50, 10), (30, 60, 0)]:
+    def test_first_limited_quantile_keeps_full_target_window_after_standard(self):
+        a = pool(0, 50, [(30, 'UP')])
+        b = pool(1, 70, [(20, STANDARD), (70, OFF)])
+        result = score(a, b)
+        self.assertEqual(result['total'], 11)
+        self.assertEqual(result['pools'][0]['value'], 11)
+        self.assertFalse(result['pending'])
+
+    def test_second_limited_does_not_reprice_first_and_main_up_replaces_split(self):
+        a = pool(0, 50, [(30, 'UP')])
+        both_off = pool(1, 70, [(40, OFF), (70, OFF)])
+        result = score(a, both_off)
+        self.assertEqual([row['value'] for row in result['pools']], [20, 0])
+        self.assertFalse(result['pending'])
+
+        main_up = pool(1, 70, [(40, OFF), (70, 'UP')])
+        result = score(a, main_up)
+        self.assertAlmostEqual(result['total'], 11.14047297, places=7)
+        self.assertAlmostEqual(result['pools'][0]['value'], 11.14047297, places=7)
+        self.assertFalse(result['pending'])
+
+    def test_first_natural_limited_cutoff_keeps_unspent_incremental_coupon(self):
+        a = pool(0, 60, [(40, 'UP')])
+        b = pool(1, 25, [(8, OFF), (25, OFF)])
+        result = score(a, b)
+        self.assertEqual(result['total'], 10)
+        self.assertEqual([row['value'] for row in result['pools']], [10, 0])
+        self.assertEqual(sum(entry['voucherCredit'] for entry in
+                             result['pools'][0]['attributedSettlements']), 10)
+
+    def test_three_red_credit_is_weighted_by_first_six_star_quantile(self):
+        a = pool(0, 50, [(30, 'UP')])
+        b = pool(1, 120, [(55, STANDARD), (100, STANDARD), (120, 'UP')])
+        result = score(a, b)
+        self.assertAlmostEqual(result['total'], 9.38201770, places=7)
+        self.assertAlmostEqual(result['pools'][0]['value'], 9.38201770, places=7)
+        self.assertAlmostEqual(sum(entry['characterValue'] for entry in
+                                   result['pools'][0]['attributedSettlements']),
+                               10.61798230, places=7)
+
+    def test_rush_only_up_preserves_weighted_reference_water_for_next_pool(self):
+        a = pool(0, 55, [(10, 'UP')])
+        b = pool(1, 30, [(25, STANDARD)])
+        b.update(rushUsed=True, rush=[{'character': b['up']}])
+        c = pool(2, 55, [(55, 'UP')])
+        self.assertTrue(score(a, b)['pending'])
+        result = score(a, b, c)
+        self.assertAlmostEqual(result['total'], 61.47286822, places=7)
+        self.assertAlmostEqual(result['pools'][0]['value'], 61.47286822, places=7)
+        self.assertEqual(result['pools'][2]['pendingPaid'], 0)
+
+    def test_first_up_quantile_uses_one_incremental_voucher(self):
+        for a_up, total, expected in [(20, 50, 16.90957247), (30, 60, 6.90957247)]:
             with self.subTest(coupon=total == 60):
                 result = score(pool(0, total, [(a_up, 'UP')]),
                                pool(1, 100, [(20, STANDARD), (100, 'UP')]))
-                self.assertEqual(result['total'], expected)
+                self.assertAlmostEqual(result['total'], expected, places=7)
 
     def test_reference_coupon_does_not_survive_up_checkpoint(self):
-        result = score(pool(0, 45, [(35, 'UP')]), pool(1, 60, [(55, 'UP')]),
+        result = score(pool(0, 50, [(20, 'UP')]), pool(1, 44, [(44, 'UP')]),
                        pool(2, 95, [(25, STANDARD), (95, 'UP')]))
-        self.assertEqual([p['value'] for p in result['pools']], [0, -10, 0])
-        self.assertEqual(result['pools'][1]['settlements'][0]['referenceAt'], 65)
+        self.assertAlmostEqual(result['pools'][0]['value'], 1.28797765, places=7)
+        self.assertEqual([p['value'] for p in result['pools'][1:]], [0, 0])
+        self.assertGreater(result['pools'][1]['settlements'][0]['referenceAt'], 60)
+        next_up, = result['pools'][2]['settlements']
+        self.assertEqual((next_up['referenceAt'], next_up['actualPaid'], next_up['referencePaid']),
+                         (95, 85, 85))
 
     def test_one_voucher_funds_up_then_tail_then_extra_character(self):
         a = pool(0, 60, [(45, 'UP')])
         b = pool(1, 20, [(15, 'UP'), (18, STANDARD)])
-        c = pool(2, 120, [(40, STANDARD), (118, STANDARD), (120, 'UP')])
+        c = pool(2, 120, [(70, STANDARD), (119, STANDARD), (120, 'UP')])
         result = score(a, b, c)
-        self.assertEqual([p['value'] for p in result['pools']], [-20, 0, 0])
+        self.assertEqual([p['value'] for p in result['pools']], [-5, 0, 0])
         entries = result['pools'][0]['attributedSettlements']
         self.assertEqual([(e['settledPoolId'], e['voucherCredit'], e['characterValue'])
                           for e in entries if e['voucherCredit'] or e['characterValue']],
@@ -53,15 +108,15 @@ class ActualLossTests(unittest.TestCase):
 
     def test_voucher_credit_goes_to_earning_pool_not_using_pool(self):
         a = pool(0, 60, [(40, 'UP')])
-        b = pool(1, 60, [(37, 'UP')])
-        c = pool(2, 120, [(2, STANDARD), (72, STANDARD), (92, STANDARD), (120, 'UP')])
+        b = pool(1, 60, [(40, 'UP')])
+        c = pool(2, 40, [(40, 'UP')])
         result = score(a, b, c)
-        self.assertEqual([row['value'] for row in result['pools']], [-10, 13, 0])
-        self.assertEqual(result['total'], 3)
-        for i, value in ((0, -10), (1, 13)):
+        self.assertEqual([row['value'] for row in result['pools']], [10, 10, 0])
+        self.assertEqual(result['total'], 20)
+        for i in (0, 1):
             entry, = [e for e in result['pools'][i]['attributedSettlements'] if e['voucherCredit']]
             self.assertEqual((entry['settledPoolId'], entry['voucherCredit'], entry['value']),
-                             (result['pools'][i+1]['id'], 10, value))
+                             (result['pools'][i+1]['id'], 10, 10))
 
     def test_shared_character_value_is_split_by_contributing_water(self):
         a = pool(0, 45, [(35, 'UP')])
@@ -82,23 +137,77 @@ class ActualLossTests(unittest.TestCase):
 
     def test_first_off_limited_does_not_skip_last_off_limited(self):
         result = score(pool(0, 55, [(35, 'UP')]),
-                       pool(1, 120, [(40, OFF), (110, OFF), (120, 'UP')]))
+                       pool(1, 120, [(55, OFF), (110, OFF), (120, 'UP')]))
         self.assertEqual([p['value'] for p in result['pools']], [-15.83, 0])
+
+    def test_sixth_off_banner_copy_is_limited_but_seventh_is_standard(self):
+        a = pool(0, 100, [(at, 'UP') for at in (20, 40, 60, 80, 100)])
+        b = pool(1, 60, [(20, OFF), (60, OFF)])
+        row = score(a, b)['pools'][1]
+        self.assertEqual(row['value'], 40)
+        self.assertEqual([(p['at'], p['type']) for p in row['settlements']],
+                         [(20, '歪限定后停手'), (60, '常驻后停手')])
+        self.assertEqual(row['tailWater'], 0)
+        self.assertEqual(b['events'][-1]['character'], OFF)
+        c = pool(2, 120, [(60, STANDARD), (120, 'UP')])
+        result = score(a, b, c)
+        part, = result['pools'][2]['settlements']
+        self.assertEqual((part['actualPaid'], part['referencePaid']), (100, 110))
+        self.assertEqual(result['pools'][1]['value'], 30)
+
+    def test_guaranteed_token_can_complete_potential_before_later_off_banner_hit(self):
+        hits = [(at, 'UP') for at in (40, 80, 120, 160, 200)]
+        b = pool(1, 25, [(25, OFF)])
+        self.assertEqual(score(pool(0, 239, hits), b)['pools'][1]['value'], 0)
+        token = pool(0, 240, hits, tokens=[{'at': 240}])
+        self.assertEqual(score(token, b)['pools'][1]['value'], 5)
+
+    def test_capped_off_banner_hit_before_guarantee_has_standard_value(self):
+        a = pool(0, 100, [(at, 'UP') for at in (20, 35, 50, 65, 80)])
+        a.update(rushUsed=True, rush=[{'character': OFF}])
+        b = pool(1, 120, [(55, STANDARD), (110, OFF), (120, 'UP')])
+        result = score(a, b)
+        self.assertEqual(result['total'], 5)
+        part, = result['pools'][1]['settlements']
+        self.assertEqual((part['type'], part['characterValue'], part['extraCharacter']),
+                         ('首 UP 前额外常驻', 15, OFF))
+
+    def test_rush_off_banner_overflow_does_not_create_a_stop(self):
+        a = pool(0, 100, [(at, 'UP') for at in (20, 40, 60, 80, 100)])
+        b = pool(1, 34, [(30, OFF)])
+        b.update(rushUsed=True, rush=[{'character': OFF}])
+        row = score(a, b)['pools'][1]
+        self.assertEqual([(p['at'], p['type']) for p in row['settlements']],
+                         [(30, '歪限定后停手')])
+        self.assertEqual(row['pendingPaid'], 4)
+
+    def test_current_up_still_settles_after_full_potential(self):
+        a = pool(0, 140, [(at, 'UP') for at in range(20, 141, 20)])
+        row = score(a)['pools'][0]
+        self.assertEqual(row['value'], 0)
+        self.assertEqual(row['settlements'][-1]['type'], '主池后续 UP')
+        self.assertEqual(row['settlements'][-1]['at'], 140)
 
     def test_savings_and_extra_standard_both_count(self):
         a = pool(0, 60, [(45, 'UP')])
         b = pool(1, 20, [(15, 'UP')])
-        c = pool(2, 117, [(40, STANDARD), (116, STANDARD), (117, 'UP')])
-        self.assertEqual(score(a, b, c)['total'], -23)
-        self.assertEqual(score(a, b, c, actualLossStandardValue=0)['total'], -8)
+        c = pool(2, 119, [(70, STANDARD), (118, STANDARD), (119, 'UP')])
+        self.assertEqual(score(a, b, c)['total'], -6)
+        self.assertEqual(score(a, b, c, actualLossStandardValue=0)['total'], 9)
 
-    def test_default_stop_settles_closed_path_and_carries_tail(self):
+    def test_later_main_target_replaces_provisional_end_of_record_settlement(self):
         a = pool(0, 45, [(35, 'UP')])
         b = pool(1, 30, [(20, STANDARD)])
         c = pool(2, 30, [(30, 'UP')])
+        provisional = score(a, b)
+        self.assertEqual(provisional['total'], 20)
+        self.assertEqual(provisional['pools'][1]['pendingPaid'], 10)
+        self.assertTrue(provisional['pending'])
         settled = score(a, b, c)
-        self.assertEqual(settled['total'], 20)
-        self.assertEqual(settled['pools'][2]['settlements'][0]['referenceAt'], 40)
+        self.assertEqual(settled['total'], 30)
+        self.assertEqual([row['value'] for row in settled['pools']], [10, 20, 0])
+        self.assertEqual(settled['pools'][1]['settlements'], [])
+        self.assertEqual(settled['pools'][2]['settlements'][0]['referenceAt'], 30)
         self.assertFalse(settled['pending'])
 
     def test_later_standard_is_not_covered_by_earlier_limited(self):
@@ -108,7 +217,7 @@ class ActualLossTests(unittest.TestCase):
 
     def test_new_unknown_only_withholds_the_extra_limited_settlement(self):
         a = pool(0, 60, [(35, 'UP')])
-        b = pool(1, 120, [(40, STANDARD), (110, '伊冯'), (120, 'UP')])
+        b = pool(1, 120, [(50, STANDARD), (110, '伊冯'), (120, 'UP')])
         unresolved = score(a, b, initialOwned=None)
         self.assertEqual(unresolved['total'], 0)
         self.assertEqual(unresolved['partialPools'], 1)
@@ -123,19 +232,22 @@ class ActualLossTests(unittest.TestCase):
         first = pool(0, 70, [(70, 'UP')])
         second = pool(1, 30, [])
         third = pool(2, 38, [(38, 'UP')])
-        result = score(first, second, third)
-        row = result['pools'][1]
+        provisional = score(first, second)
+        row = provisional['pools'][1]
         self.assertEqual((row['value'], row['tailWater'], row['pendingPaid']), (0, 30, 10))
         self.assertEqual(row['warnings'], [])
         self.assertTrue(row['pending'])
+        result = score(first, second, third)
         quote = result['pools'][2]['settlements'][0]
-        self.assertEqual((quote['value'], quote['referenceAt']), (0, 48))
+        self.assertAlmostEqual(quote['value'], .58412502, places=7)
+        self.assertAlmostEqual(quote['referenceAt'], 47.41587498, places=7)
+        self.assertFalse(result['pending'])
 
     def test_late_free_positions_are_applied_to_the_reference(self):
         a = pool(0, 60, [(45, 'UP')])
         b = pool(1, 30, [(15, 'UP')], freeDrawPositions=list(range(11, 31)))
         actual = score(a, b)['pools'][1]['settlements'][0]
-        self.assertEqual((actual['actualPaid'], actual['referencePaid'], actual['value']), (10, 20, 5))
+        self.assertEqual((actual['actualPaid'], actual['referencePaid'], actual['value']), (10, 10, 15))
 
     def test_token_protects_only_water_at_the_reward(self):
         a = pool(0, 250, [(20, 'UP'), (65, 'UP'), (135, 'UP'), (200, 'UP')], tokens=[{'at': 240}])
@@ -148,9 +260,12 @@ class ActualLossTests(unittest.TestCase):
         a = pool(0, 50, [(20, 'UP')])
         b = pool(1, 100, [(20, STANDARD), (100, 'UP')], rushAt=30)
         b.update(rushUsed=True, rush=[{'character': b['up']}])
-        self.assertEqual(score(a, b)['total'], 10)
+        self.assertAlmostEqual(score(a, b)['total'], 16.90957247, places=7)
         b.update(total=35, events=b['events'][:1])
-        self.assertEqual(score(a, b)['total'], 30)
+        result = score(a, b)
+        self.assertEqual(result['total'], 0)
+        self.assertEqual(result['pools'][1]['pendingPaid'], 35)
+        self.assertTrue(result['pending'])
 
     def test_default_rush_at_30_settles_the_120_up_voucher_case(self):
         a = pool(0, 60, [(37, 'UP')])
@@ -178,7 +293,7 @@ class ActualLossTests(unittest.TestCase):
         score_at_30 = score(a, b, c)
         self.assertEqual(score_at_30['partialPools'], 0)
         self.assertEqual(score_at_30['pools'][1]['value'], 45)
-        self.assertEqual(score_at_30['pools'][2]['settlements'][0]['value'], 15)
+        self.assertEqual(score_at_30['pools'][2]['settlements'][0]['value'], 45)
         for at in (60, 70):
             self.assertEqual(score(a, dict(b, rushAt=at, rushTimingEvidence='explicit'), c),
                              score_at_30)
@@ -190,7 +305,7 @@ class ActualLossTests(unittest.TestCase):
         rows = score(a, b)['pools']
         row = rows[1]
         self.assertEqual((rows[0]['value'], row['value'], row['pendingPaid'], row['warnings']),
-                         (20, 0, 4, []))
+                         (0, 0, 24, []))
         unknown = score(a, dict(b, rushUsed=None, rush=[]))['pools'][1]
         self.assertIn('加急是否使用未知。', unknown['warnings'])
         before_unlock = dict(pool(0, 29, []), rushUsed=True, rush=[{'character': a['up']}])
@@ -199,7 +314,7 @@ class ActualLossTests(unittest.TestCase):
 
     def test_rush_off_does_not_interrupt_first_up_replay_but_counts_for_new(self):
         a = pool(0, 55, [(35, 'UP')])
-        b = pool(1, 120, [(5, STANDARD), (70, STANDARD), (110, '卡缪'), (120, 'UP')])
+        b = pool(1, 120, [(55, STANDARD), (110, '卡缪'), (120, 'UP')])
         baseline = score(a, b)
         self.assertEqual(baseline['pools'][0]['value'], -31.66)
         different = dict(b, rushUsed=True, rush=[{'character': '伊冯'}])

@@ -50,7 +50,7 @@ class ServiceTests(unittest.TestCase):
         result = score_ledger(self.ledger)
         self.assertEqual(code, 200)
         version = config['characterVersion']
-        self.assertEqual(version, 'character-abc-flat-v4-new-weight')
+        self.assertEqual(version, 'character-abc-flat-v6-effective-output-weight')
         self.assertEqual(version, result['character']['version'])
         for axis in ('characterSix', 'up', 'limited'):
             with self.subTest(axis=axis):

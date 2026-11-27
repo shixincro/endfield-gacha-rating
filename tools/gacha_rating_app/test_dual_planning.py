@@ -3,8 +3,10 @@ import copy
 import math
 import unittest
 
-from planning import score_planning, TABLE_FILE
+from planning import build_reference_rows, score_planning, TABLE_FILE
+import actual_loss
 import opportunity
+from test_actual_loss import pool as scheduled_pool
 
 
 def fixture(total, events=(), *, owned=(), free=20, rush=(), initial=0):
@@ -68,21 +70,69 @@ class DualPlanningTests(unittest.TestCase):
         self.assertEqual(data, before, 'scoring must not change real identities or source ledger')
         return result['pools'][0]
 
+    def test_full_percentile_intervals_preserve_cost_for_fixed_target(self):
+        cases = ((20, 0, 10, 10, 0, 0), (20, 0, 10, 10, 2, 2),
+                 (3, 30, 10, 20, 2, 1), (79, 5, 20, 10, 0, 0))
+        for actual_pity, reference_pity, actual_free, reference_free, actual_off, reference_off in cases:
+            with self.subTest(case=(actual_pity, reference_pity, actual_free, reference_free,
+                                    actual_off, reference_off)):
+                actual = actual_loss.completion_pmf(actual_pity, actual_off)
+                reference = actual_loss.completion_pmf(reference_pity, reference_off)
+                paid = lambda at, allowance: max(at - allowance, 0)
+                rebuilt_reference = [0.0] * 120
+                contributions = []
+                for at, mass in enumerate(actual, 1):
+                    if not mass:
+                        continue
+                    outcomes = actual_loss.quantile_reference(
+                        actual_pity, reference_pity, at,
+                        actual_eligible=actual_off, ref_eligible=reference_off)
+                    self.assertAlmostEqual(math.fsum(w for _, w in outcomes), 1., places=10)
+                    for stop, weight in outcomes:
+                        rebuilt_reference[stop - 1] += mass * weight
+                        contributions.append(mass * weight * (paid(at, actual_free) -
+                                                               paid(stop, reference_free)))
+                for recovered, model in zip(rebuilt_reference, reference):
+                    self.assertAlmostEqual(recovered, model, places=10)
+                expected = (actual_loss.expected_paid(actual_pity, actual_free, actual_off) -
+                            actual_loss.expected_paid(reference_pity, reference_free, reference_off))
+                self.assertAlmostEqual(math.fsum(contributions), expected, places=10)
+
+    def test_hypothetical_topup_preserves_limited_eligibility_by_copy_branch(self):
+        off = '洁尔佩塔'
+        earlier = scheduled_pool(1, 50, [(n, 'UP') for n in (10, 20, 30, 40, 50)],
+                                 initialPity=0, freeAllowance=10)
+        source = scheduled_pool(2, 50, [(50, 'UP')])
+        next_ = scheduled_pool(3, 70, [(70, off)])
+        data = {'pools': [earlier, source, next_], 'initialOwned': [], 'initialPity': 0}
+        row = build_reference_rows(data)['pools'][1]
+        self.assertEqual(row['nextTarget']['kind'], 'first-effective-limited')
+        three_water = [s for s in row['reference']['states'] if s['pity'] == 3]
+        before_cap = math.fsum(s['probability'] for s in three_water if s['copies'][off] == 5)
+        after_cap = math.fsum(s['probability'] for s in three_water if s['copies'][off] == 6)
+        self.assertGreater(before_cap, 0)
+        self.assertGreater(after_cap, 0)
+        self.assertAlmostEqual(before_cap + after_cap, .008 * .992 ** 3)
+        expected = math.fsum(s['probability'] * actual_loss.expected_paid(
+            s['pity'], 20, 1 if s['copies'][off] == 6 else 2)
+            for s in row['reference']['states'])
+        self.assertAlmostEqual(row['reference']['futureCost'], expected)
+
     def test_validated_examples(self):
         cases = [
             (fixture(20), 0, 0),
             (fixture(30), 4.9826825969, 0),
             (fixture(30, [(30, '诀')]), 0, 0),
             (fixture(30, [(30, '卡缪')]), 0, 0),
-            (fixture(50, [(50, '卡缪')]), 2.8513327191, .9576659889),
+            (fixture(50, [(50, '卡缪')]), 2.7022858619, .9576659889),
             (fixture(60, [(50, '卡缪')]), 0, 5.2856577233),
             (fixture(70, [(70, '卡缪')]), 0, 16.4584983165),
-            (fixture(70, [(70, '卡缪')], owned=('卡缪',)), 47.8888743482, 16.4584983165),
+            (fixture(70, [(70, '卡缪')], owned=('卡缪',)), 0, 16.4584983165),
             (fixture(70, [(70, '别礼')]), 47.8888743482, 16.4584983165),
             (fixture(60), 10.6900087145, 2.0405924831),
             (fixture(119, [(55, '别礼'), (119, '卡缪')]), 0, 60.8578856475),
             (fixture(30, rush=('诀',)), 0, 0),
-            (fixture(50, [(30, '卡缪'), (50, '卡缪')]), 20, .9576659889),
+            (fixture(50, [(30, '卡缪'), (50, '卡缪')]), 2.7022858619, .9576659889),
         ]
         for data, a, b in cases:
             with self.subTest(data=data):
@@ -91,24 +141,25 @@ class DualPlanningTests(unittest.TestCase):
                 self.assertAlmostEqual(row['localLoss'], a, places=8)
                 self.assertAlmostEqual(row['opportunity']['value'], b, places=8)
 
-    def test_unknown_new_is_not_zero_or_current_up(self):
+    def test_unknown_new_retains_limited_stop_and_live_main_up_guarantee(self):
         row = self.row(fixture(70, [(70, '卡缪')], owned=None))
-        self.assertIsNone(row['localLoss'])
-        self.assertEqual(row['status'], 'partial')
+        self.assertEqual(row['localLoss'], 0)
+        self.assertEqual(row['status'], 'ok')
+        self.assertEqual(row['anchor']['kind'], 'limited')
         self.assertEqual(row['unknownNewPositions'], [70])
         self.assertAlmostEqual(row['opportunity']['value'], 16.4584983165)
         row = self.row(fixture(40, [(30, '卡缪'), (40, '诀')], owned=None))
         self.assertEqual(row['localLoss'], 0)
         self.assertEqual(row['opportunity']['value'], 0)
 
-    def test_new_uncertainty_does_not_suppress_independently_known_b(self):
+    def test_new_uncertainty_does_not_suppress_either_stop_quote(self):
         data = fixture(70, [(70, '卡缪')], owned=None)
         first = copy.deepcopy(data['pools'][0])
         first.update(id='prior', index=7, total=20, tail=0, up='卡缪', rushUsed=False,
                      rushAt=None, events=[{'at':20,'character':'诀','source':'main'}])
         data['pools'].insert(0, first)
         row = score_planning(data)['pools'][1]
-        self.assertIsNone(row['localLoss'])
+        self.assertEqual(row['localLoss'], 0)
         self.assertAlmostEqual(row['opportunity']['value'], 16.4584983165)
 
     def test_new_anchor_identity_and_same_position_order(self):
@@ -203,7 +254,7 @@ class DualPlanningTests(unittest.TestCase):
         second.update(id='later', index=10, up='提弗洛斯', events=[{'at':30,'character':'梨诺','source':'main'}])
         data['pools'].append(second)
         row = score_planning(data)['pools'][1]
-        self.assertIsNone(row['localLoss'])
+        self.assertEqual(row['localLoss'], 0)
         self.assertEqual(row['opportunity']['status'], 'ok')
         self.assertEqual(row['opportunity']['value'], 0)
 

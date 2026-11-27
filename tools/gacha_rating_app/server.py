@@ -332,7 +332,7 @@ def recognize_job(job_id, files):
     """
     global ENGINE
     from service import score_ledger, public_document
-    from importer import analyze_image, build_ledger
+    from importer import ScreenshotImportError, analyze_image, build_ledger, validate_screenshot_import
     sessions = []
     items = []
     engine_error = None
@@ -361,6 +361,7 @@ def recognize_job(job_id, files):
             path.parent.mkdir(parents=True,exist_ok=True)
             path.write_bytes(entry['blob'])
             doc=analyze_image(path,directory/'image_00',engine=ENGINE)
+            validate_screenshot_import(doc)
             doc['file']=name
             doc['sourceImage']=str(path)
             documents=[public_document(doc,DATA)]
@@ -373,6 +374,8 @@ def recognize_job(job_id, files):
             save_json(directory/'session.json',session)
             sessions.append(session)
             item.update(status='done', sessionId=session_id)
+        except ScreenshotImportError as exc:
+            item.update(status='error', error=str(exc), code=exc.code)
         except Exception as exc:
             item.update(status='error', error=str(exc)[:1000])
         items.append(item)
@@ -465,7 +468,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not file.is_relative_to(DATA.resolve()) or file.suffix.lower() not in ('.png','.jpg','.jpeg','.webp'):
                     return self.send(403,{'error':'禁止访问。'})
             else:
-                if path not in ('/','/index.html','/app.js','/ui-model.js','/character-edit.js','/manual-supplement.js','/style.css'):
+                if path not in ('/','/index.html','/app.js','/ui-model.js','/character-edit.js',
+                                '/manual-supplement.js','/style.css','/screenshot-summary-example.png'):
                     return self.send(404,{'error':'页面不存在。'})
                 file=ROOT/'static'/('index.html' if path=='/' else path.lstrip('/'))
             if not file.is_file():

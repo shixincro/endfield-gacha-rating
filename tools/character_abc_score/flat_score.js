@@ -5,11 +5,17 @@ const {scoreFlatA, FlatALimit} = require('./flat_a');
 const {scoreFlatBMatched, FlatBLimit} = require('./flat_b');
 const {FlatBStopLimit} = require('./flat_b_stop');
 const {scoreFlatNew} = require('./flat_new');
-const {midTail, rushCountCost} = require('../gacha_rating_app/character_result_math');
+const {replayLimitedPotential} = require('./flat_potential');
+const {convolveMany, distribution, midTail, rushCountCost} = require('../gacha_rating_app/character_result_math');
 
-const VERSION = 'character-abc-flat-v4-new-weight';
+const VERSION = 'character-abc-flat-v6-effective-output-weight';
 const OUTPUT = {characterSix: 'six', up: 'up', limited: 'limited'};
-const RUSH_RATE = {characterSix: .008, up: .004, limited: .008 * 9 / 14};
+const RUSH_RATE = {characterSix: .008, up: .004};
+const RUSH_SIZE = 10;
+const OFF_RATE = .008 / 14;
+const FACTORIAL = [1];
+for (let i = 1; i <= RUSH_SIZE; i++) FACTORIAL.push(FACTORIAL[i - 1] * i);
+const rushLimitedCache = new Map();
 const MAX_NEW_WEIGHT = .20;
 
 function hits(events, index) {
@@ -83,10 +89,12 @@ function splitAxis(axis, pools) {
     const donated = incoming.get(i) ?? {draws: 0, paid: 0};
     const {id, index, carry, openingPity, freeAllowance, paidPrefix, complete, observedAt,
       referenceOpeningPity, referenceFreeAllowance, inheritsVoucher} = pool;
+    const capacityA = axis === 'limited' ? {capacity: pool.potential.aContext} : {};
     a.push({id, carry, openingPity, freeAllowance, paidPrefix, complete, observedAt, referenceOpeningPity,
       referenceFreeAllowance: referenceFreeAllowance ?? (observedAt === 0 ? 10 : null),
       inheritsVoucher, draws: observedAt + donated.draws,
-      paid: paidPrefix[observedAt] + donated.paid, transferredPaid: donated.paid, ...pool.a});
+      paid: paidPrefix[observedAt] + donated.paid, transferredPaid: donated.paid, ...pool.a,
+      limited: pool.potential.a, ...capacityA});
     if (!complete) continue;
 
     const isUp = axis === 'up';
@@ -98,9 +106,10 @@ function splitAxis(axis, pools) {
     // The shared stopping policy uses the actual draw positions and token nodes.
     // Only the UP axis additionally requires verified token entries in the ledger.
     const stopTarget = counts.up + Math.floor(pool.total / 240);
+    const capacityB = axis === 'limited' ? {capacity: pool.potential.bContext} : {};
     b.push({id, start: observedAt, end, completeEnd, paidPrefix, freeAllowance,
       draws: end - observedAt, paid: paidPrefix[end] - paidPrefix[observedAt],
-      ...counts, up: counts.up + tokens.length, stopTarget});
+      ...counts, limited: pool.potential.b, ...capacityB, up: counts.up + tokens.length, stopTarget});
 
     if (end === pool.total) continue;
     const next = receivingPool(pools, i);
@@ -115,27 +124,66 @@ function splitAxis(axis, pools) {
   return {a, b, actual: {A: phase(a), B: phase(b), transfers, pending}};
 }
 
-function rushPart(axis, rush) {
+function limitedRushDistribution([remainingFirst, remainingSecond]) {
+  const key = `${remainingFirst}/${remainingSecond}`;
+  const cached = rushLimitedCache.get(key);
+  if (cached) return cached;
+  const probabilities = new Float64Array(RUSH_SIZE + 1);
+  const otherRate = 1 - RUSH_RATE.up - 2 * OFF_RATE;
+  let expected = 0;
+  for (let up = 0; up <= RUSH_SIZE; up++) {
+    for (let first = 0; first <= RUSH_SIZE - up; first++) {
+      for (let second = 0; second <= RUSH_SIZE - up - first; second++) {
+        const rest = RUSH_SIZE - up - first - second;
+        const arrangements = FACTORIAL[RUSH_SIZE] /
+          (FACTORIAL[up] * FACTORIAL[first] * FACTORIAL[second] * FACTORIAL[rest]);
+        const mass = arrangements * RUSH_RATE.up ** up * OFF_RATE ** (first + second) * otherRate ** rest;
+        const count = up + Math.min(first, remainingFirst) + Math.min(second, remainingSecond);
+        probabilities[RUSH_SIZE - count] += mass;
+        expected += count * mass;
+      }
+    }
+  }
+  const result = {distribution: distribution(-RUSH_SIZE, probabilities), expected};
+  rushLimitedCache.set(key, result);
+  return result;
+}
+
+function rushPart(axis, rush, pools) {
   if (!rush.draws) return [];
   const observed = rush[OUTPUT[axis]];
+  if (axis === 'limited') {
+    const forecasts = pools.filter(pool => pool.rushAt != null)
+      .map(pool => limitedRushDistribution(pool.potential.cRemaining));
+    return [{score: 100 * midTail(convolveMany(forecasts.map(item => item.distribution)), -observed),
+      weight: sum(forecasts, 'expected'), details: {method: 'fixed-rush-limited-capacity-midrank',
+        draws: rush.draws, observed}}];
+  }
   const rate = RUSH_RATE[axis];
   return [{score: 100 * midTail(rushCountCost(rush.draws, rate, 1), -observed),
     weight: rush.draws * rate, details: {method: 'fixed-rush-count-midrank', draws: rush.draws, observed, rate}}];
 }
 
-function combine(groups, emptyReason = '没有可比较的抽卡投入') {
+function combine(groups, {emptyReason = '没有可比较的抽卡投入', groupWeights, keepReferenceWeight = false} = {}) {
   let weight = 0;
   let total = 0;
-  for (const parts of Object.values(groups)) {
+  let referenceWeight = 0;
+  for (const [zone, parts] of Object.entries(groups)) {
+    const zoneReferenceWeight = groupWeights ? sum(parts, 'weight') : 0;
+    const scale = zoneReferenceWeight > 0 ? groupWeights[zone] / zoneReferenceWeight : 1;
     for (const part of parts) {
       if (!Number.isFinite(part.score) || part.score < 0 || part.score > 100 ||
           !Number.isFinite(part.weight) || part.weight < 0) throw new Error('候选分数或权重无效');
-      weight += part.weight;
-      total += part.weight * part.score;
+      const partWeight = part.weight * scale;
+      weight += partWeight;
+      total += partWeight * part.score;
+      referenceWeight += part.weight;
     }
   }
   return weight > 0
-    ? {status: 'scored', score: Math.max(0, Math.min(100, total / weight)), details: {groups, weight}}
+    ? {status: 'scored', score: Math.max(0, Math.min(100, total / weight)),
+      details: {groups, weight: keepReferenceWeight ? referenceWeight : weight,
+        ...(groupWeights ? {groupWeights} : {})}}
     : {status: 'unscored', score: null, reason: emptyReason};
 }
 
@@ -154,7 +202,10 @@ function adjustLimited(base, prepared) {
 function scoreRecord(input, onlyB) {
   const prepared = prepare(input);
   const pools = describePools(input, prepared);
-  const C = phase(pools.map(pool => ({draws: pool.rushAt == null ? 0 : 10, paid: 0, ...hits(pool.rush, pool.index)})));
+  const potential = replayLimitedPotential(prepared, pools.map(pool => pool.tokens));
+  for (const [i, pool] of pools.entries()) pool.potential = potential[i];
+  const C = phase(pools.map(pool => ({draws: pool.rushAt == null ? 0 : RUSH_SIZE, paid: 0,
+    ...hits(pool.rush, pool.index), limited: pool.potential.c})));
   const byAxis = {};
   const axes = {};
   for (const axis of Object.keys(OUTPUT)) {
@@ -168,9 +219,15 @@ function scoreRecord(input, onlyB) {
         const reason = missingTokens ? `${missingTokens.id} 的 240 信物明细未确认` : `${unknownFree.id} 的免费额度未确认`;
         axes[axis] = {status: 'unscored', score: null, reason};
       } else if (onlyB) {
-        axes[axis] = combine({B: scoreFlatBMatched(axis, b)}, '没有可结算的 B 区投入');
+        axes[axis] = combine({B: scoreFlatBMatched(axis, b)}, {emptyReason: '没有可结算的 B 区投入'});
       } else {
-        axes[axis] = combine({A: scoreFlatA(axis, a), B: scoreFlatBMatched(axis, b), C: rushPart(axis, C)});
+        const {A, B} = actual;
+        const output = OUTPUT[axis];
+        const effective = {A: A[output], B: B[output], C: C[output]};
+        const groupWeights = Object.values(effective).some(count => count > 0) ? effective : undefined;
+        const groups = {A: scoreFlatA(axis, a), B: scoreFlatBMatched(axis, b), C: rushPart(axis, C, pools)};
+        // The six-star hover uses details.weight as the expected output.
+        axes[axis] = combine(groups, {groupWeights, keepReferenceWeight: axis === 'characterSix'});
       }
     } catch (error) {
       if (!(error instanceof FlatALimit) && !(error instanceof FlatBLimit) && !(error instanceof FlatBStopLimit)) throw error;
@@ -180,7 +237,8 @@ function scoreRecord(input, onlyB) {
   if (!onlyB) axes.limited = adjustLimited(axes.limited, prepared);
   const {A, B, pending, transfers} = byAxis.characterSix;
   return {version: VERSION, ...(onlyB ? {scope: 'B'} : {}), axes,
-    actual: {A, B, C, byAxis, pending, transfers, endPity: pools.at(-1).tail}};
+    actual: {A, B, C, byAxis, pending, transfers, endPity: pools.at(-1).tail,
+      saturatedOffLimited: sum(potential, 'saturatedOff')}};
 }
 
 function scoreCharacterFlatABC(input) {

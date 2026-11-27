@@ -389,6 +389,38 @@ async function main() {
     for(const text of ['继续本池','换到下池','终态资源成本','比较本池继续与换池','局部首UP机会亏损','不与A相加'])assert(!detail.includes(text));
     assert.equal(h.pending.length,0,'opening detail never reruns DP or OCR');
   });
+  await test('zero-loss easter egg requires an empty ranking and verified zero results for each pool',async()=>{
+    const h=harness();await tick();const saved=record();
+    const zero={pools:['p0','p1'].map(id=>({
+      id,total:10,status:'ok',localLoss:0,countedLoss:0,opportunity:{status:'ok',value:0},
+    })),actualLoss:{total:0,partialPools:0,pending:false,pools:['p0','p1'].map(id=>({id,value:0,warnings:[]}))}};
+    saved.result.planning=zero;h.ctx.loadSession(saved);await tick();
+    const list=h.nodes.planningTopPools;
+    assert(list.querySelector('.zero-loss-card').textContent.includes('零亏损达成'));
+    assert(h.nodes.planningOpportunity.textContent.includes('0.00 抽'));
+    assert.equal(list.querySelectorAll('button').length,0);
+    h.nodes.openAllPlanning.click();
+    assert.equal(h.nodes.planning.querySelectorAll('.planning-pool-link').length,2);
+    const variants=[
+      p=>p.pools.forEach(row=>row.total=0),
+      p=>p.pools[0].status='partial',
+      p=>p.pools[0].opportunity.value=1,
+      p=>p.pools[0].opportunity.status='partial',
+      p=>p.actualLoss.pools.pop(),
+      p=>p.actualLoss.partialPools=1,
+      p=>p.actualLoss.pending=true,
+      p=>Object.assign(p.pools[0],{localLoss:2,planningExempt:true,exemptedLoss:2}),
+      p=>Object.assign(p.pools[0],{localLoss:-1,countedLoss:-1}),
+      p=>p.actualLoss.pools.forEach((row,i)=>row.value=i?-.001:.001),
+    ];
+    for(const mutate of variants){
+      const plan=structuredClone(zero);mutate(plan);h.ctx.renderPlanningHighlights(plan);
+      assert.equal(list.querySelector('.zero-loss-card'),null);
+    }
+    h.read('session.result.scoringScenario={enabled:true}');
+    h.ctx.renderPlanningHighlights(zero);
+    assert.equal(list.querySelector('.zero-loss-card'),null);
+  });
   await test('partial A can have known B and open details without formatting null as zero',async()=>{
     const h=harness();await tick();const saved=record();
     saved.result.planning={pools:[{id:'p0',banner:'未知New',status:'partial',localLoss:null,
@@ -610,10 +642,10 @@ async function main() {
     assert.equal(h.nodes.planningTitle.hidden, true);
     assert.equal(h.nodes.planningTopPools.querySelectorAll('button').length, 0);
   });
-  await test('early free-stop details distinguish missing water valuation from actual future pulls', async () => {
+  await test('early free-stop details show additional reference pulls', async () => {
     const h = harness(); await tick(); const saved = record('early-stop', [pool({total: 5, tail: 5,
       events: [], rushUsed: false, rushAt: null, quota: 100})]);
-    const reason = '未用完免费额度，少积累5抽水位；参考水位仅用于规划估值，不代表实际补抽结果。';
+    const reason = '参考继续抽5次，按出货概率加权其尾水和图鉴。';
     saved.result.planning = {version: planningVersion, pools: [{id: 'p0', banner: '熔火灼痕',
       status: 'ok', total: 5, idealStop: 10, freeAllowance: 10, missedFree: 5, missingPity: 5,
       actual: {stop: 5, pity: 5}, reference: {stop: 10, pity: 10, pityIsValuation: true},
@@ -622,7 +654,7 @@ async function main() {
     h.ctx.loadSession(saved); await tick(); h.nodes.planningTopPools.querySelector('.planning-pool-link').click();
     assert(h.nodes.planningDetailDialog.open);
     const detail = h.nodes.planningDetailContent.textContent;
-    assert(detail.includes('少积累水位')); assert(detail.includes('5 抽水位'));
+    assert(detail.includes('参照追加')); assert(detail.includes('5 主池抽'));
     assert(detail.includes(reason)); assert(detail.includes('5 / 10 抽'));
     assert(detail.includes('永久投入差')); assert(detail.includes('水位价值差')); assert(detail.includes('赠券价值差'));
     assert.equal(h.pending.length, 0, 'detail display must not trigger OCR, simulation, or a new score');
@@ -631,15 +663,20 @@ async function main() {
     const h = harness(); await tick(); const saved = record('early-node', [pool({total: 55, tail: 5})]);
     saved.result.planning = {version: planningVersion, pools: [{id: 'p0', banner: '熔火灼痕',
       status: 'ok', total: 55, idealStop: 60, freeAllowance: 10, missedFree: 0, missingPity: 5,
-      anchor: {at: 50, source: 'main'}, actual: {stop: 55, pity: 5},
-      reference: {stop: 60, pity: 10, pityIsValuation: true},
-      referencePitySource: 'early-stop-water-extension',
-      reason: '提前停手按永久抽、水位与60节点赠券的净差估值，并非实际补抽结果。',
-      localLoss: 6.25, permanentDelta: -5, waterValueDelta: -1.25, rewardValueDelta: -10}]};
+      anchor: {at: 50, source: 'rush', kind: 'limited', character: '卡缪'}, actual: {stop: 55, pity: 5},
+      reference: {stop: 60, pity: null, pityIsValuation: true},
+      referencePitySource: 'early-stop-weighted',
+      reason: '参考继续抽5次，按出货概率加权其尾水和图鉴。',
+      localLoss: 6.25, permanentDelta: -5, waterValueDelta: -1.25, rewardValueDelta: -10}],
+      actualLoss: {pools: [{id: 'p0', value: 3, settlements: [
+        {at: 50, type: '首个限定', value: 3, referenceAt: 47.126}
+      ]}]}};
     h.ctx.loadSession(saved); await tick(); h.nodes.planningTopPools.querySelector('.planning-pool-link').click();
     const detail = h.nodes.planningDetailContent.textContent;
-    assert(detail.includes('55 / 60 抽')); assert(detail.includes('少积累水位'));
-    assert(detail.includes('永久抽、水位与60节点赠券的净差估值'));
+    assert(detail.includes('55 / 60 抽')); assert(detail.includes('参照追加'));
+    assert(detail.includes('参考继续抽5次')); assert(detail.includes('按概率估值'));
+    assert(detail.includes('歪限定「卡缪」（加急）'));
+    assert(detail.includes('参照平均第 47.13 抽取得目标'));
     const rows = h.nodes.planningDetailContent.querySelector('dl').children;
     const values = Object.fromEntries(rows.filter((_, index) => index % 2 === 0)
       .map((node, index) => [node.textContent, rows[index * 2 + 1].textContent]));
@@ -869,9 +906,9 @@ async function main() {
       trigger.onmouseleave();
       assert.equal(preview.hidden,true);
     };
-    expectRows('角色六星',[['大保底区','70.0 分'],['无大保底区','—'],['加急','—'],['期望产量','3.00 个']]);
-    expectRows('当期UP',[['大保底区','70.0 分'],['无大保底区','45.0 分'],['加急','55.0 分']]);
-    expectRows('限定',[['大保底区','—'],['无大保底区','—'],['加急','—'],['无 New 加成总分','50.0 分'],['New','-1.25 分']]);
+    expectRows('角色六星',[['120保底区','70.0 分'],['无120保底区','—'],['加急','—'],['期望产量','3.00 个']]);
+    expectRows('当期UP',[['120保底区','70.0 分'],['无120保底区','45.0 分'],['加急','55.0 分']]);
+    expectRows('限定',[['120保底区','—'],['无120保底区','—'],['加急','—'],['无 New 加成总分','50.0 分'],['New','-1.25 分']]);
     expectRows('角色五星',[['欧非分数','50.0 分'],['期望产量','9.25 个']]);
     assert.equal(radarScore(radar,'角色五星'),'多 0.8 个');
   });
@@ -1786,6 +1823,43 @@ async function main() {
     h.ctx.selected([{name:'甲.png',size:1}]);await h.nodes.import.click();await tick();
     assert.deepEqual(h.state(),before);assert(h.nodes.error.textContent.includes('甲.png：不是支持的截图'));
     assert(h.nodes.status.textContent.includes('导入失败'));assert.equal(h.nodes.import.disabled,false);
+    assert(h.nodes.screenshotGuidance.hidden);
+  });
+  await test('typed screenshot job failures show only the related corrective guide and keep history',async()=>{
+    const h=await loaded(),before=h.state();
+    const variants=[
+      ['screenshot_missing_summary','screenshotMissingSummary','screenshotWeaponPool','请完整截图'],
+      ['screenshot_weapon_pool','screenshotWeaponPool','screenshotMissingSummary','暂不支持武器池识图'],
+    ];
+    assert(h.nodes.screenshotGuidance.hidden);
+    for(const [code,shown,hidden,title] of variants){
+      h.replies.set('/api/import',{id:'typed-image-failure'});
+      h.replies.set('/api/jobs/typed-image-failure',{status:'error',message:'识别失败',items:[
+        {name:'截图.jpg',status:'error',error:'测试截图未导入',code}]});
+      h.nodes.images.onchange({target:{files:[{name:'截图.jpg',size:1}]}});
+      await h.nodes.import.click();await tick();
+      assert(!h.nodes.screenshotGuidance.hidden);
+      assert(!h.nodes[shown].hidden);assert(h.nodes[hidden].hidden);assert(h.nodes[shown+'Title'].focused);
+      assert(html.includes('>'+title+'</h2>'));
+      assert.deepEqual(h.state(),before);assert(!h.nodes.import.disabled);
+      h.nodes.images.onchange({target:{files:[{name:'其他记录.json',size:1}]}});
+      assert(h.nodes.screenshotGuidance.hidden);
+      assert(h.nodes.screenshotMissingSummary.hidden);assert(h.nodes.screenshotWeaponPool.hidden);
+    }
+    const example=html.match(/<figure class="screenshot-guide-example">[\s\S]*?<\/figure>/)?.[0];
+    assert.match(example, /<img\b[^>]*src="\.\/screenshot-summary-example\.png"[^>]*alt="[^"]*红框[^"]*顶部汇总[^"]*"/);
+  });
+  await test('a typed API error selects screenshot guidance only for an image',async()=>{
+    const h=await loaded(),before=h.state();
+    h.ctx.selected([{name:'截图.jpg',size:1}]);const image=h.nodes.import.click();await tick();
+    h.pending.find(r=>r.url==='/api/import').resolve({error:'测试错误',code:'screenshot_weapon_pool'},false);
+    await image;assert(!h.nodes.screenshotWeaponPool.hidden);
+    h.ctx.selected([{name:'记录.json',size:1,text:async()=>'{}'}]);
+    const json=h.nodes.import.click();await tick();
+    h.pending.find(r=>r.url==='/api/records/import').resolve({error:'测试错误',code:'screenshot_weapon_pool'},false);
+    await json;assert(h.nodes.screenshotGuidance.hidden);
+    assert(h.nodes.error.textContent.includes('记录.json：测试错误'));
+    assert.deepEqual(h.state(),before);
   });
   await test('home picker and dropzone accept TXT and JSON and use the text adapter',async()=>{
     const accept=html.match(/id="images"[^>]*accept="([^"]+)"/)[1].split(',');
@@ -2756,6 +2830,28 @@ async function main() {
     const {h}=await clipboardHarness();h.ctx.navigator.clipboard.write=async()=>{throw Object.assign(Error('denied'),{name:'NotAllowedError'});};
     await h.nodes.exportRadar.click();assert(h.nodes.error.textContent.includes('允许浏览器访问剪贴板'));assert(!h.nodes.exportRadar.disabled);
     assert(!h.nodes.status.textContent.includes('结果图片已复制'));
+  });
+  await test('each exported result includes permanent author credit alongside the optional nickname',async()=>{
+    const h=await loaded(),source=h.nodes.resultCapture,radar=new Element('section');
+    radar.className='radar-panel';source.append(radar);
+    function cloneCaptureNode(original){
+      const copy=new Element(original.tagName);
+      copy.nodeType=1;copy.className=original.className;copy.textContent=original._text;
+      copy.style.setProperty=(name,value)=>{copy.style[name]=value;};
+      copy.cloneNode=()=>cloneCaptureNode(copy);
+      copy.append(...original.children.map(cloneCaptureNode));
+      return copy;
+    }
+    source.cloneNode=()=>cloneCaptureNode(source);
+    h.ctx.getComputedStyle=()=>Object.assign([],{backgroundColor:'#f4f4ef'});
+    for(const nickname of ['', '玩家昵称']){
+      const {snapshot}=h.ctx.resultSnapshot(nickname);
+      assert.equal(snapshot.children.at(-1),snapshot.querySelector('.result-image-credit'));
+      assert.equal(snapshot.querySelector('.result-image-credit').textContent,'工具作者 小鳄鱼释心 · shixincro.top');
+      assert.equal(snapshot.querySelector('.result-image-watermark')?.textContent??'',nickname);
+    }
+    assert(!source.querySelector('.result-image-credit'));
+    assert(!source.querySelector('.result-image-watermark'));
   });
   await test('nickname stays out of the record and is used by both PNG export actions',async()=>{
     const {h,writes}=await clipboardHarness(),before=h.state(),storage=new Map(),captured=[],downloads=[];

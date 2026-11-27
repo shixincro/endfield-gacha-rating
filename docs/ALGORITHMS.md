@@ -6,7 +6,7 @@
 
 | 读哪一页 | 当前实现 |
 | --- | --- |
-| [角色欧非](CHARACTER_SCORING.md) | 六星、UP 和限定按大保底区、无大保底区与加急分别计分。限定另算歪 New。五星沿用武库配额反推、冻结基准和正态校准。 |
+| [角色欧非](CHARACTER_SCORING.md) | 六星、UP 和限定按 120 保底区、无 120 保底区与加急分别计分，再按各轴实出有效产量合分。限定另算歪 New。五星沿用武库配额反推、冻结基准和正态校准。 |
 | [武器欧非](WEAPON_SCORING.md) | 未填潜能时比较固定十池的产出率分布。填写潜能后按实得份数构造参照，用终止矩和正态近似计分。 |
 | [规划亏损](PLANNING_LOSS.md) | 分别计算期望亏损、机会亏损和实际亏损。三项的参照停点与资源口径各有定义。 |
 | [角色仿真对照](CHARACTER_SCORE_SIMULATION.md) | 24 种抽法、12,288 条合成账本。对照三轴总分、A/B/C 分段、尾部占比和歪 New 修正。 |
@@ -24,11 +24,11 @@
 
 | 模块 | 版本 |
 | --- | --- |
-| 角色六星、UP、限定 | `character-abc-flat-v4-new-weight` |
+| 角色六星、UP、限定 | `character-abc-flat-v6-effective-output-weight` |
 | 角色五星 | `five-flat-v1` |
 | 武器输入与路由 | `weapon-potential-table-loss-v2-20261104` |
 | 武器潜能模型 | `weapon-result-profile-gift-inclusive-normal-1.0` |
-| 规划亏损 | `planning-three-losses-v3.1+observed-loss-v2.3+opportunity-flat-benchmark-water-v6` |
+| 规划亏损 | `planning-three-losses-v4.0+observed-loss-quantile-v3.0+opportunity-flat-benchmark-water-v6` |
 | 识别证据与账本校验 | `card-boundary-review-v9-xiaoke-20261125` |
 
 动态规划用浮点数递推指定规则下的概率，部分长卷积使用 FFT，部分分位计算只保留所需的概率前缀。超过计算上限时，按各轴的规则报告缺项或走兼容参照。仿真页用伪随机抽卡记录检验分布表现，日常评分按上述模块直接计算。

@@ -6,6 +6,8 @@ const MAX_WORK = 220_000_000;
 const MAX_STATES = 300_000;
 const PROBABILITY_TOLERANCE = 2e-11;
 const FREE_ALLOWANCES = [0,10,20];
+const LIMITED_LAW_CACHE_MAX = 128;
+const limitedLawCache = new Map();
 
 class FlatALimit extends Error {}
 
@@ -15,6 +17,20 @@ function ordinaryRate(pity) {
 
 function assert(condition,message) {
   if(!condition)throw new RangeError(message);
+}
+
+function finishLaw(stopped,pending) {
+  const survival=pending.reduce((sum,mass)=>sum+mass,0);
+  let stoppedMass=0, expected=0;
+  for(const {count,mass} of stopped) {
+    stoppedMass+=mass;
+    expected+=count*mass;
+  }
+  for(let count=0;count<pending.length;count++)expected+=count*pending[count];
+  if(Math.abs(stoppedMass+survival-1)>PROBABILITY_TOLERANCE) {
+    throw new Error('A 区首 UP 分布概率质量不守恒');
+  }
+  return {stopped,pending,survival,expected};
 }
 
 function firstUpLaw(axis,openingPity,horizon) {
@@ -53,17 +69,108 @@ function firstUpLaw(axis,openingPity,horizon) {
   for(let count=0;count<pending.length;count++) {
     for(let pity=0;pity<80;pity++)pending[count]+=live[80*count+pity];
   }
-  const survival=pending.reduce((sum,mass)=>sum+mass,0);
-  let stoppedMass=0, expected=0;
-  for(const {count,mass} of stopped) {
-    stoppedMass+=mass;
-    expected+=count*mass;
+  return finishLaw(stopped,pending);
+}
+
+function normalizeCapacity(raw,horizon) {
+  const {remaining,grantAt=null,grants=[0,0]}=raw;
+  const tuple=(values,max)=>Array.isArray(values)&&values.length===2&&
+    values.every(value=>Number.isInteger(value)&&value>=0&&value<=max);
+  assert(tuple(remaining,6)&&tuple(grants,10)&&grants[0]+grants[1]<=10&&
+    (grantAt===null?grants[0]+grants[1]===0:Number.isInteger(grantAt)&&grantAt>=0&&grantAt<=120),
+    'A 区限定参照的剩余潜能容量无效');
+  const [left,right]=remaining;
+  const grantLeft=Math.min(left,grants[0]),grantRight=Math.min(right,grants[1]);
+  if(grantAt===0)return {left:left-grantLeft,right:right-grantRight,at:null,grantLeft:0,grantRight:0};
+  // A grant after the final scored draw cannot change any current A output.
+  if(grantAt===null||grantAt>=horizon||grantLeft+grantRight===0) {
+    return {left,right,at:null,grantLeft:0,grantRight:0};
   }
-  for(let count=0;count<pending.length;count++)expected+=count*pending[count];
-  if(Math.abs(stoppedMass+survival-1)>PROBABILITY_TOLERANCE) {
-    throw new Error('A 区首 UP 分布概率质量不守恒');
+  return {left,right,at:grantAt,grantLeft,grantRight};
+}
+
+function countLimitedA(openingPity,horizon,capacity) {
+  const {left,right,at:grantAt,grantLeft,grantRight}=capacity;
+  const budget=left+right;
+  if(!budget)return firstUpLaw('up',openingPity,horizon);
+
+  // Effective off-banner outputs are the decrease in capacity minus copies
+  // consumed by the fixed rush event. Keep that amount as a separate state.
+  const grantMax=grantLeft+grantRight;
+  const leftStride=80*(right+1),usedStride=leftStride*(left+1);
+  const width=usedStride*(grantMax+1);
+  if(width>MAX_STATES||width*horizon>MAX_WORK)throw new FlatALimit('A 区限定参照计算量超限');
+  const index=(l,r,used)=>used*usedStride+l*leftStride+r*80;
+  function afterGrant(l,r,used) {
+    const fillLeft=Math.min(l,grantLeft),fillRight=Math.min(r,grantRight);
+    return index(l-fillLeft,r-fillRight,used+fillLeft+fillRight);
   }
-  return {stopped,pending,survival,expected};
+
+  let live=new Float64Array(width),next=new Float64Array(width);
+  live[index(left,right,0)+openingPity]=1;
+  const stopped=[];
+  const countWidth=Math.min(horizon,budget+1)+1;
+  for(let at=1;at<=horizon;at++) {
+    const completions=new Float64Array(countWidth);
+    const usedMax=grantAt!==null&&at>grantAt?grantMax:0;
+    const nextIndex=at===grantAt?afterGrant:index;
+    next.fill(0);
+    for(let used=0;used<=usedMax;used++) {
+      for(let l=0;l<=left;l++) {
+        for(let r=0;r<=right;r++) {
+          const count=budget-l-r-used;
+          if(count<0||count>=at)continue;
+          const current=index(l,r,used);
+          const reset=nextIndex(l,r,used);
+          const offLeft=l?nextIndex(l-1,r,used):reset;
+          const offRight=r?nextIndex(l,r-1,used):reset;
+          for(let pity=0;pity<80;pity++) {
+            const mass=live[current+pity];
+            if(!mass)continue;
+            if(at===120) {
+              completions[count+1]+=mass;
+              continue;
+            }
+            const gold=mass*ordinaryRate(pity);
+            const miss=mass-gold;
+            if(miss>0)next[reset+pity+1]+=miss;
+            completions[count+1]+=gold/2;
+            next[reset]+=gold*5/14;
+            next[offLeft]+=gold/14;
+            next[offRight]+=gold/14;
+          }
+        }
+      }
+    }
+    for(let count=1;count<countWidth;count++) {
+      if(completions[count]>0)stopped.push({at,count,mass:completions[count]});
+    }
+    [live,next]=[next,live];
+  }
+  const pending=new Float64Array(countWidth);
+  const usedMax=grantAt===null?0:grantMax;
+  for(let used=0;used<=usedMax;used++) {
+    for(let l=0;l<=left;l++) {
+      for(let r=0;r<=right;r++) {
+        const count=budget-l-r-used;
+        if(count<0||count>=countWidth)continue;
+        const current=index(l,r,used);
+        for(let pity=0;pity<80;pity++)pending[count]+=live[current+pity];
+      }
+    }
+  }
+  return finishLaw(stopped,pending);
+}
+
+function limitedLaw(openingPity,horizon,raw) {
+  const capacity=normalizeCapacity(raw,horizon);
+  const {left,right,at,grantLeft,grantRight}=capacity;
+  const key=[openingPity,horizon,left,right,at??'-',grantLeft,grantRight].join('/');
+  if(!limitedLawCache.has(key)) {
+    if(limitedLawCache.size>=LIMITED_LAW_CACHE_MAX)limitedLawCache.delete(limitedLawCache.keys().next().value);
+    limitedLawCache.set(key,countLimitedA(openingPity,horizon,capacity));
+  }
+  return limitedLawCache.get(key);
 }
 
 function observedOutput(axis,groups) {
@@ -240,6 +347,9 @@ function scoreFlatA(axis,segments) {
   });
   const cache=new Map();
   const lawFor=(segment,horizon)=>{
+    if(axis==='limited'&&segment.capacity) {
+      return limitedLaw(segment.referenceOpeningPity,horizon,segment.capacity);
+    }
     const key=segment.referenceOpeningPity*121+horizon;
     if(!cache.has(key))cache.set(key,firstUpLaw(axis,segment.referenceOpeningPity,horizon));
     return cache.get(key);

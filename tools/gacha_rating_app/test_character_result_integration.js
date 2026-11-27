@@ -29,7 +29,7 @@ const unscored = (r,axis='characterSix') => {
 };
 
 test('production exposes the new version while preserving frozen ledger export',()=>{
-  assert.equal(production.VERSION,'character-abc-flat-v4-new-weight');
+  assert.equal(production.VERSION,'character-abc-flat-v6-effective-output-weight');
   assert.notEqual(production.VERSION,ledger.VERSION);
   const r=production.scoreCharacter(record([pool(0,10,[{at:10,character:'莱万汀'}])]));
   assert.equal(r.version,production.VERSION);axes.forEach(a=>scored(r,a));

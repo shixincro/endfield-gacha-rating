@@ -82,7 +82,8 @@ function normalize(segment,metric) {
     return lo;
   }
   return {id,start,end,draws:end-start,paid:observedPaid,output,
-    completeEnd:segment.completeEnd??null,window:total-start,target:segment.stopTarget,cost,horizon};
+    completeEnd:segment.completeEnd??null,window:total-start,target:segment.stopTarget,
+    capacity:segment.capacity,cost,horizon};
 }
 
 function creditAt(metric,offset,draw) {
@@ -264,7 +265,7 @@ function matchedPart(axis,segments,context) {
   const pools=[];
   for(const segment of segments) {
     const {id,start,target,window,end,paid,completeEnd}=segment;
-    const kernel=stoppedBKernel(axis,{start,target,window,output:segment.output});
+    const kernel=stoppedBKernel(axis,{start,target,window,output:segment.output,capacity:segment.capacity});
     if(!kernel.conditionedMass)throw new FlatBLimit(`${id} 的同停手参照没有该轴的同产出路径`);
     const gross=kernel.probabilities;
     const costs=new Float64Array(Math.min(actualPaid,segment.cost(gross.length-1))+1);

@@ -26,11 +26,29 @@ def run(*pools):
                            "initialOwned": [], "completeHistory": True, "issues": []})
 
 
+def hypothetical_water_distribution(pity, additional):
+    """Independent mass flow for the unobserved continuation."""
+    states = {pity: 1.0}
+    for _ in range(additional):
+        next_states = {0: 0.0}
+        for before, weight in states.items():
+            probability = 1.0 if before == 79 else .008 + .05 * max(before - 64, 0)
+            next_states[0] += probability * weight
+            if probability < 1:
+                next_states[before + 1] = (1 - probability) * weight
+        states = next_states
+    return states
+
+
 class PlanningTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.table = json.loads(TABLE_FILE.read_text(encoding="utf-8"))
         cls.v = {r["pity"]: r for r in cls.table["rows"]}
+
+    def future_after(self, pity, additional, free):
+        return sum(weight * self.v[after][f"free{free}"]
+                   for after, weight in hypothetical_water_distribution(pity, additional).items())
 
     def test_source_and_table_bounds(self):
         self.assertEqual(self.table["source"]["sha256"], "f21b25f9f600bb62519f40281d58f4b86fb02dd1e6cbd1e7a4765448a93310aa")
@@ -68,6 +86,17 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(row["actual"]["pity"], 5)
         self.assertAlmostEqual(row["localLoss"], 3+self.v[5]["free20"]-self.v[2]["free20"])
 
+    def test_early_up_stop_weights_the_hypothetical_top_up(self):
+        row = run(pool(50, [event(50)]))["pools"][0]
+        self.assertEqual(row["idealStop"], 60)
+        self.assertEqual(row["permanentDelta"], -10)
+        # No six-star leaves ten pity. The last hit k pulls before #60 leaves k pity,
+        # regardless of earlier hits in this flat-probability interval.
+        reference_cost = (.992 ** 10 * self.v[10]["free20"] +
+                          sum(.008 * .992 ** k * self.v[k]["free20"] for k in range(10)))
+        self.assertAlmostEqual(row["localLoss"], -10 + self.v[0]["free10"] - reference_cost)
+        self.assertAlmostEqual(row["localLoss"], 2.70228586187)
+
     def test_early_stop_supplement_uses_water_permanent_and_reward_net(self):
         p = pool(55, [event(50)])
         before = copy.deepcopy(p)
@@ -76,14 +105,15 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(row["branch"], "last-up")
         self.assertEqual(row["status"], "ok")
         self.assertEqual(row["actual"]["pity"], 5)
-        self.assertEqual(row["reference"]["pity"], 10)
+        self.assertIsNone(row["reference"]["pity"])
         self.assertEqual(row["missingPity"], 5)
-        self.assertEqual(row["referencePitySource"], "early-stop-water-extension")
+        self.assertEqual(row["referencePitySource"], "early-stop-weighted")
         self.assertTrue(row["reference"]["pityIsValuation"])
         self.assertEqual(row["permanentDelta"], -5)
-        self.assertAlmostEqual(row["rewardValueDelta"], -(self.v[10]["free10"]-self.v[10]["free20"]))
-        self.assertAlmostEqual(row["localLoss"], -5+self.v[5]["free10"]-self.v[10]["free20"])
-        self.assertAlmostEqual(row["localLoss"], 6.189474206420904)
+        ref10 = self.future_after(5, 5, 10)
+        ref20 = self.future_after(5, 5, 20)
+        self.assertAlmostEqual(row["rewardValueDelta"], ref20 - ref10)
+        self.assertAlmostEqual(row["localLoss"], -5 + self.v[5]["free10"] - ref20)
         self.assertEqual(p, before)
 
     def test_early_stop_free10_values_missing_water_not_face_draws(self):
@@ -93,30 +123,29 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(row["idealStop"], 10)
         self.assertEqual(row["missedFree"], 5)
         self.assertEqual(row["missingPity"], 5)
-        self.assertEqual(row["referencePitySource"], "early-stop-water-extension")
+        self.assertEqual(row["referencePitySource"], "early-stop-weighted")
         self.assertTrue(row["reference"]["pityIsValuation"])
         self.assertEqual(row["actual"]["pity"], 5)
-        self.assertEqual(row["reference"]["pity"], 10)
+        self.assertIsNone(row["reference"]["pity"])
         self.assertEqual(row["permanentDelta"], 0)
         self.assertEqual(row["rewardValueDelta"], 0)
-        self.assertAlmostEqual(row["localLoss"], self.v[5]["free10"]-self.v[10]["free10"])
-        self.assertAlmostEqual(row["localLoss"], 1.7534469810691)
+        self.assertAlmostEqual(row["localLoss"], self.v[5]["free10"]-self.future_after(5, 5, 10))
         self.assertNotAlmostEqual(row["localLoss"], 5)
 
     def test_early_stop_initial_water_is_not_discarded(self):
         row = run(pool(5, initialPity=7))["pools"][0]
         self.assertEqual(row["status"], "ok")
         self.assertEqual(row["actual"]["pity"], 12)
-        self.assertEqual(row["reference"]["pity"], 17)
-        self.assertAlmostEqual(row["localLoss"], self.v[12]["free10"]-self.v[17]["free10"])
+        self.assertIsNone(row["reference"]["pity"])
+        self.assertAlmostEqual(row["localLoss"], self.v[12]["free10"]-self.future_after(12, 5, 10))
 
     def test_early_stop_off_six_uses_true_tail_not_total(self):
         row = run(pool(5, [event(3, "常驻")], initialPity=20))["pools"][0]
         self.assertEqual(row["status"], "ok")
         self.assertEqual(row["idealStop"], 10)
         self.assertEqual(row["actual"]["pity"], 2)
-        self.assertEqual(row["reference"]["pity"], 7)
-        self.assertAlmostEqual(row["localLoss"], self.v[2]["free10"]-self.v[7]["free10"])
+        self.assertIsNone(row["reference"]["pity"])
+        self.assertAlmostEqual(row["localLoss"], self.v[2]["free10"]-self.future_after(2, 5, 10))
 
     def test_early_stop_free20_from_previous_node(self):
         row = run(pool(60, [event(60)], tail=0), pool(5, index=1))["pools"][1]
@@ -125,10 +154,10 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(row["idealStop"], 20)
         self.assertEqual(row["missingPity"], 15)
         self.assertEqual(row["actual"]["pity"], 5)
-        self.assertEqual(row["reference"]["pity"], 20)
+        self.assertIsNone(row["reference"]["pity"])
         self.assertEqual(row["actual"]["nextFree"], 10)
         self.assertEqual(row["reference"]["nextFree"], 10)
-        self.assertAlmostEqual(row["localLoss"], self.v[5]["free10"]-self.v[20]["free10"])
+        self.assertAlmostEqual(row["localLoss"], self.v[5]["free10"]-self.future_after(5, 15, 10))
 
     def test_early_stop_explicit_free_positions_do_not_make_unspent_free_paid(self):
         for allowance in (10, 20):
@@ -139,7 +168,8 @@ class PlanningTests(unittest.TestCase):
                 self.assertEqual(row["actual"]["permanent"], 0)
                 self.assertEqual(row["reference"]["permanent"], 0)
                 self.assertEqual(row["permanentDelta"], 0)
-                self.assertAlmostEqual(row["localLoss"], self.v[5]["free10"]-self.v[allowance]["free10"])
+                self.assertAlmostEqual(row["localLoss"],
+                                       self.v[5]["free10"]-self.future_after(5, allowance-5, 10))
 
     def test_early_stop_supplement_with_explicit_occurred_free_positions(self):
         row = run(pool(55, [event(50)], freeDrawPositions=list(range(1, 11))))["pools"][0]
@@ -147,7 +177,7 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(row["actual"]["permanent"], 45)
         self.assertEqual(row["reference"]["permanent"], 50)
         self.assertEqual(row["permanentDelta"], -5)
-        self.assertAlmostEqual(row["localLoss"], 6.189474206420904)
+        self.assertAlmostEqual(row["localLoss"], -5+self.v[5]["free10"]-self.future_after(5, 5, 20))
 
     def test_early_stop_unknown_actual_water_stays_partial(self):
         ledger = {"pools": [pool(5, initialPity=None)], "initialPity": None}
@@ -155,33 +185,32 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(row["status"], "partial")
         self.assertIsNone(row["localLoss"])
 
-    def test_early_stop_reference_65_uses_extended_table(self):
+    def test_early_stop_reference_can_reach_65(self):
         row = run(pool(5, initialPity=55))["pools"][0]
         self.assertEqual(row["actual"]["pity"], 60)
-        self.assertEqual(row["reference"]["pity"], 65)
+        self.assertIsNone(row["reference"]["pity"])
         self.assertEqual(row["status"], "ok")
-        self.assertAlmostEqual(row["localLoss"], self.v[60]["free10"]-self.v[65]["free10"])
+        self.assertAlmostEqual(row["localLoss"], self.v[60]["free10"]-self.future_after(60, 5, 10))
 
-    def test_early_stop_virtual_water_79_is_supported(self):
+    def test_early_stop_reference_can_reach_79(self):
         row = run(pool(5, initialPity=69))["pools"][0]
         self.assertEqual(row["actual"]["pity"], 74)
-        self.assertEqual(row["reference"]["pity"], 79)
+        self.assertIsNone(row["reference"]["pity"])
         self.assertEqual(row["status"], "ok")
         self.assertTrue(row["reference"]["pityIsValuation"])
-        self.assertAlmostEqual(row["localLoss"], self.v[74]["free10"]-self.v[79]["free10"])
+        self.assertAlmostEqual(row["localLoss"], self.v[74]["free10"]-self.future_after(74, 5, 10))
 
-    def test_early_stop_virtual_water_80_is_not_a_valid_state(self):
+    def test_early_stop_reference_at_80_resolves_the_six_star(self):
         row = run(pool(5, initialPity=70))["pools"][0]
-        self.assertEqual(row["status"], "partial")
-        self.assertIsNone(row["localLoss"])
-        self.assertIn("0–79", "".join(row["warnings"]))
+        self.assertEqual(row["status"], "ok")
+        self.assertAlmostEqual(row["localLoss"], self.v[75]["free10"]-self.future_after(75, 5, 10))
 
     def test_previous_ongoing_option_now_settles_at_recorded_stop(self):
         result = run(pool(5, ended=False))
         row = result["pools"][0]
         self.assertEqual(row["status"], "ok")
         self.assertEqual(row["missedFree"], 5)
-        self.assertAlmostEqual(row["localLoss"], self.v[5]["free10"]-self.v[10]["free10"])
+        self.assertAlmostEqual(row["localLoss"], self.v[5]["free10"]-self.future_after(5, 5, 10))
         self.assertEqual(result["summary"]["calculatedPools"], 1)
         self.assertEqual(result["summary"]["localLossSignedSum"], row["localLoss"])
         self.assertFalse(result["summary"]["sumIsPartial"])
@@ -191,7 +220,7 @@ class PlanningTests(unittest.TestCase):
         q = pool(10, index=1, id="p1", initialPity=5)
         before = copy.deepcopy([p, q])
         rows = run(p, q)["pools"]
-        self.assertEqual(rows[0]["reference"]["pity"], 10)
+        self.assertIsNone(rows[0]["reference"]["pity"])
         self.assertEqual(rows[1]["actual"]["pity"], 15)
         self.assertEqual(rows[1]["localLoss"], 0)
         self.assertEqual([p, q], before)
@@ -234,9 +263,17 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(row["missedFree"], 5)
 
     def test_free_gap_unknown(self):
-        row = run(pool(60, [event(60)]), pool(15, [event(15)], index=2))["pools"][1]
+        ledger = {"pools": [pool(60, [event(60)]), pool(15, [event(15)], index=2)],
+                  "initialPity": 0, "initialOwned": [], "completeHistory": False}
+        row = score_planning(ledger)["pools"][1]
         self.assertIsNone(row["freeAllowance"])
         self.assertIsNone(row["localLoss"])
+
+        # A confirmed skipped banner cannot carry an unspent previous-banner coupon.
+        ledger["completeHistory"] = True
+        row = score_planning(ledger)["pools"][1]
+        self.assertEqual(row["freeAllowance"], 10)
+        self.assertEqual(row["localLoss"], 0)
 
     def test_preexisting_current_only_free_uses_same_reference(self):
         ledger = {"pools": [pool(10)], "initialPity": 0, "initialOwned": ["目标"]}
@@ -248,7 +285,7 @@ class PlanningTests(unittest.TestCase):
         row = run(pool(8, [event(8)]))["pools"][0]
         self.assertEqual(row["missedFree"], 2)
         self.assertEqual(row["idealStop"], 10)
-        self.assertAlmostEqual(row["localLoss"], self.v[0]['free10']-self.v[2]['free10'])
+        self.assertAlmostEqual(row["localLoss"], self.v[0]['free10']-self.future_after(0, 2, 10))
 
     def test_free_hit_then_exhaust_allowance_is_zero_not_negative(self):
         for free in (10, 20):
@@ -268,7 +305,7 @@ class PlanningTests(unittest.TestCase):
             self.assertEqual(row['idealStop'], free)
             self.assertEqual(row['missingPity'], free-5)
             self.assertEqual(row['permanentDelta'], 0)
-            self.assertAlmostEqual(row['localLoss'], self.v[2]['free10']-self.v[free-3]['free10'])
+            self.assertAlmostEqual(row['localLoss'], self.v[2]['free10']-self.future_after(2, free-5, 10))
             self.assertGreater(row['localLoss'], 0)
 
     def test_multiple_free_up_copies_still_finish_free(self):
@@ -353,7 +390,7 @@ class PlanningTests(unittest.TestCase):
         self.assertEqual(row["reference"]["pity"], 10)
         self.assertEqual(row["actual"]["pity"], 13)
 
-    def test_repeat_tokens_and_copies_have_no_overflow_exception(self):
+    def test_tokens_and_featured_copies_remain_anchors_at_max_potential(self):
         events = [event(n) for n in (60, 100, 140, 180, 220, 260, 300, 340, 380, 420, 460, 482)]
         row = run(pool(483, events, tokens=[{"at": 240}, {"at": 480}]))["pools"][0]
         self.assertEqual(row["anchor"]["at"], 482)

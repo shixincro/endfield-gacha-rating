@@ -48,6 +48,11 @@ class BatchImportTests(unittest.TestCase):
         doc['identity']['uid'] = str(10000000 + number)
         doc['pools'][0].update(total=10 * number, tail=10 * (number - 1),
                                 quota=2360 + 200 * (number - 1))
+        doc['overview'] = {'character': {'N': 10 * number}, 'weapon': {'N': 20}}
+        if blob == b'no-summary':
+            doc['overview']['character']['N'] = None
+        elif blob == b'weapon':
+            doc.update(kind='weapon', pools=[], overview={'character': None, 'weapon': None})
         return doc
 
     @staticmethod
@@ -127,6 +132,15 @@ class BatchImportTests(unittest.TestCase):
         self.assertEqual(job['session']['id'], job['id'])
         self.assertEqual(job['session'], job['sessions'][0])
         self.assertEqual(job['items'][0]['sessionId'], job['id'])
+
+    def test_image_guidance_keeps_rejected_screenshots_out_of_history(self):
+        for blob, code in ((b'no-summary', 'screenshot_missing_summary'),
+                           (b'weapon', 'screenshot_weapon_pool')):
+            with self.subTest(code=code):
+                job = self.run_job([{'name': '示例.png', 'blob': blob}])
+                self.assertEqual(job['status'], 'error')
+                self.assertEqual(job['items'][0]['code'], code)
+                self.assertEqual(self.saved(), [])
 
     def test_save_failure_is_isolated_from_later_images(self):
         original_save = server.save_json

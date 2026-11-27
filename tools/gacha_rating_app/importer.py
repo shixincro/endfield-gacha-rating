@@ -458,6 +458,24 @@ def analyze_image(path: Path, output_dir: Path, engine=None) -> dict:
     return result
 
 
+class ScreenshotImportError(ValueError):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+def validate_screenshot_import(document):
+    """Require the overview for character imports and decline weapon-only details."""
+    kind = document.get("kind")
+    if kind == "weapon":
+        # A weapon summary is also present on full character screenshots;
+        # "weapon" is assigned from the detected 申领 sections, not that summary.
+        raise ScreenshotImportError("screenshot_weapon_pool", "暂不支持武器池识图。")
+    overview = (document.get("overview") or {}).get("character") or {}
+    if kind == "character" and not _integer(overview.get("N")):
+        raise ScreenshotImportError("screenshot_missing_summary", "请完整截图，保留顶部总抽数和下方卡池明细。")
+
+
 def _pool_signature(pool):
     # Crop coordinates / OCR scores are deliberately not semantic identity.
     compact = {k: pool.get(k) for k in ("banner", "total", "tail", "quota", "token_count", "rushUsed", "rushAt")}

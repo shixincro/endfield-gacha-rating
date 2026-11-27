@@ -237,8 +237,17 @@ async function calculate(reviewed,{preserveReview=false}={}){
   }catch(e){if(myRequest!==requestId||myRevision!==revision)return false;error(e.message);$('calculating').textContent='计算未完成，请检查提示。';return false;}
 }
 const singleImportMessage='一次只能导入一个文件。';
+function setScreenshotGuidance(code){
+  const missing=code==='screenshot_missing_summary', weapon=code==='screenshot_weapon_pool';
+  $('screenshotMissingSummary').hidden=!missing;
+  $('screenshotWeaponPool').hidden=!weapon;
+  $('screenshotGuidance').hidden=!(missing||weapon);
+  if(missing||weapon)$(missing?'screenshotMissingSummaryTitle':'screenshotWeaponPoolTitle').focus();
+  return missing||weapon;
+}
 function selected(list){
   if(busy||restoring||historyDeleting||scoreSettingPending())return;
+  setScreenshotGuidance();
   importFile=list.length===1?list[0]:null;
   $('selection').textContent=importFile?.name||'尚未选择文件';
   $('import').disabled=!importFile;
@@ -255,7 +264,12 @@ async function importImageFile(file){
   const job=await api('/api/import',{files:[{name:file.name,data:await readFile(file)}]});
   while(true){
     const progress=await api('/api/jobs/'+job.id);
-    if(progress.status==='error')throw Error(progress.items?.[0]?.error||progress.message||'未能识别，请检查图片后重试。');
+    if(progress.status==='error'){
+      const item=progress.items?.[0];
+      const failure=Error(item?.error||progress.message||'未能识别，请检查图片后重试。');
+      failure.code=item?.code||progress.code;
+      throw failure;
+    }
     if(progress.status==='done'){
       const recognized=progress.session||progress.sessions?.[0];
       if(!recognized)throw Error('未收到识图结果，请在本机历史记录中查看。');
@@ -279,6 +293,7 @@ async function openSavedSession(id){
 $('import').onclick=async()=>{
   if(!importFile||busy||historyDeleting||restoring||scoreSettingPending())return;
   const file=importFile,kind=inputFileKind(file);
+  setScreenshotGuidance();
   error('');
   try{
     if(!kind)throw Error('不支持的文件。请选择 PNG、JPG、WebP、TXT 或 JSON。');
@@ -290,7 +305,8 @@ $('import').onclick=async()=>{
     showRecordImportFeedback(result.summary,result.failures,result.warnings,!!first);
     await refreshHistory();
   }catch(e){
-    showRecordImportFeedback('导入失败。',[file.name+'：'+displayText(e.message)]);
+    if(kind==='image'&&setScreenshotGuidance(e.code)){status('');error('');}
+    else showRecordImportFeedback('导入失败。',[file.name+'：'+displayText(e.message)]);
     if(e.code==='record_format_unrecognized')showUnsupportedRecordFormat([file.name]);
   }finally{
     busy=false;updateHistoryControls();
@@ -298,6 +314,7 @@ $('import').onclick=async()=>{
 };
 function loadSession(value,{reviewImport=false}={}){
   if(historyDeleting||deletedRecordIds.has(value?.id))return false;
+  setScreenshotGuidance();
   planningSettingRequest=null;planningSettingError=null;planningDetailPoolId=null;scoringScenarioRequest=null;
   navigationId++;requestId++;clearTimeout(timer);resetAutoReview();closeReviewDialogs();closeViewDialogs();session=value;revision=value.revision||1;
   // Filling agreed defaults does not revoke previously confirmed identities.
@@ -1216,7 +1233,7 @@ function renderResults(){
   updateResultExport();
 }
 const characterRadarAxes=['characterSix','up','limited','five'];
-const phaseNames={A:'大保底区',B:'无大保底区',C:'加急'};
+const phaseNames={A:'120保底区',B:'无120保底区',C:'加急'};
 function axisPreviewRows(key,axis){
   const details=axis?.details;
   const points=value=>Number.isFinite(value)?scoreText(value)+' 分':'—';
@@ -1418,7 +1435,8 @@ function renderPlanningHighlights(planning){
   target.replaceChildren(lossOverview(planning,expected));
   if(expected.exemptedPools)target.append(el('p','已豁免 '+expected.exemptedPools+' 池，共 '+lossText(expected.exemptedLossSum)+' 抽','planning-exemption-note small'));
   list.replaceChildren();$('planningBreakdown').hidden=false;
-  const pools=planning?.pools||[],actual=new Map((planning?.actualLoss?.pools||[]).map(row=>[row.id,row]));
+  const pools=planning?.pools||[],actualLoss=planning?.actualLoss;
+  const actual=new Map((actualLoss?.pools||[]).map(row=>[row.id,row]));
   const selected=new Map(expected.topPools.slice(0,3).map(row=>[row.id,row]));
   const actualRank=pools.filter(row=>Number.isFinite(actual.get(row.id)?.value))
     .sort((a,b)=>actual.get(a.id).value-actual.get(b.id).value);
@@ -1430,6 +1448,16 @@ function renderPlanningHighlights(planning){
     if(!selected.has(row.id))selected.set(row.id,row);
   }
   if(selected.size)list.append(poolLossCards(selected.values(),actual));
+  else if(session?.result?.scoringScenario?.enabled!==true
+      &&actualLoss?.total===0&&actualLoss.partialPools===0&&actualLoss.pending===false
+      &&actual.size===pools.length&&pools.some(row=>Number.isFinite(row.total)&&row.total>0)
+      &&pools.every(row=>row.localLoss===0&&ui.planningCountedLoss(row)===0&&opportunityValue(row)===0
+        &&actual.get(row.id)?.value===0&&!actual.get(row.id)?.warnings?.length)){
+    const egg=el('div',undefined,'zero-loss-card'),mark=el('span','✦','zero-loss-mark'),copy=el('div');
+    mark.setAttribute('aria-hidden','true');
+    copy.append(el('strong','零亏损达成'),el('p','亏损榜今天提前下班。'));
+    egg.append(mark,copy);list.append(egg);
+  }
   else list.append(el('p','暂无卡池亏赚可列出。','empty'));
   $('planningOpportunity').replaceChildren(maximumOpportunity(pools,actual));
 }
@@ -1548,16 +1576,20 @@ function openPlanningDetail(row){
     exemption.setAttribute('aria-busy',String(pending));
     if(pending)card.append(el('p','正在保存…','muted small'));
     if(planningSettingError?.poolId===row.id)card.append(el('p',planningSettingError.message,'error small'));
-    const anchorName=anchor?.kind==='new-limited'?'New限定「'+anchor.character+'」'+(anchor.source==='rush'?'（加急）':''):anchor?.source==='token'?'UP信物':anchor?.source==='rush'?'加急UP':'当期UP';
+    let anchorName=anchor?.source==='token'?'UP信物':anchor?.source==='rush'?'加急UP':'当期UP';
+    if(anchor?.kind==='new-limited'||anchor?.kind==='limited'){
+      const label=anchor.kind==='new-limited'?'New限定':'歪限定';
+      anchorName=label+'「'+anchor.character+'」'+(anchor.source==='rush'?'（加急）':'');
+    }
     card.append(el('p',anchor?'以第'+anchor.at+'抽的'+anchorName+'为停点参照。':row.status==='partial'?'有效收获停点存在缺项，未猜填。':'本池未获得有效收获，参照为用完免费抽后停手。','muted small'));
     if(row.stopRule==='complete-free-allowance')card.append(el('p','免费额度内出货，理想停点仍为用完本池'+row.freeAllowance+'抽免费额度。','muted small'));
     const dl=el('dl'),items=[
       ['实际 / 理想停点',(row.actual?.stop??row.total)+' / '+(row.idealStop??'—')+' 抽'],
       ['免费额度',(row.freeAllowance??'—')+' 抽'],
-      ['期初 / 实际期末 / 理想水位',(p?.initialPity??'—')+' / '+(row.actual?.pity??'—')+' / '+(row.reference?.pity??'—')],
+      ['期初 / 实际期末 / 理想水位',(p?.initialPity??'—')+' / '+(row.actual?.pity??'—')+' / '+(row.reference?.pity??(row.reference?.pityIsValuation?'按概率估值':'—'))],
       ['永久投入差',lossText(row.permanentDelta)+' 抽'],['水位价值差',lossText(row.waterValueDelta)+' 抽'],['赠券价值差',lossText(row.rewardValueDelta)+' 抽']
     ];
-    if(row.missingPity>0){items.splice(3,0,['少积累水位',row.missingPity+' 抽水位']);card.append(el('p',row.reason||'参考水位仅用于规划估值，不代表实际补抽结果。','muted small'));}
+    if(row.missingPity>0){items.splice(3,0,['参照追加',row.missingPity+' 主池抽']);card.append(el('p',row.reason||'参照追加抽数用于估算期末水位。','muted small'));}
     for(const[label,value]of items)dl.append(el('dt',label),el('dd',value));card.append(dl);
     if(Number.isFinite(row.localLoss))card.append(el('p',lossText(row.permanentDelta)+' − ('+lossText(row.waterValueDelta)+') − ('+lossText(row.rewardValueDelta)+') ≈ '+row.localLoss.toFixed(2)+' 抽','deduction-formula'));
     for(const warning of row.warnings||[])card.append(el('p',issueText(warning),'muted small'));
@@ -1567,7 +1599,8 @@ function openPlanningDetail(row){
       const section=el('section',undefined,'planning-record');
       section.append(el('h3','实际亏损 · '+(Number.isFinite(actual.value)?'已结算 ':'')+drawAmount(actual.value,actualLossStatus(actual)),drawTone(actual.value)));
       for(const part of actual.attributedSettlements||actual.settlements||[]){
-        const reference=Number.isFinite(part.referenceAt)?'，参照第 '+part.referenceAt+' 抽出 UP':'';
+        const referenceAt=part.referenceAt;
+        const reference=Number.isFinite(referenceAt)?'，参照平均第 '+(Number.isInteger(referenceAt)?referenceAt:referenceAt.toFixed(2))+' 抽取得目标':'';
         const extra=part.extraCharacter?'，'+part.extraCharacter+'折算 '+part.characterValue.toFixed(2)+' 抽':'';
         const where=part.settledPoolId&&part.settledPoolId!==row.id?'在「'+(part.settledBanner||part.settledPoolId)+'」':'';
         const voucher=part.voucherCredit>0&&part.type!=='赠券抵扣'?'，其中赠券抵 '+part.voucherCredit.toFixed(2)+' 抽':'';
@@ -1653,6 +1686,7 @@ function resultSnapshot(nickname){
   const stage=el('div'),layout=source.cloneNode(true);
   for(const popup of layout.querySelectorAll('[popover]'))popup.remove();
   if(nickname)layout.querySelector('.radar-panel').append(el('p',nickname,'result-image-watermark'));
+  layout.append(el('p','工具作者 小鳄鱼释心 · shixincro.top','result-image-credit'));
   stage.setAttribute('aria-hidden','true');stage.inert=true;
   stage.style.cssText='position:fixed;left:-20000px;top:0;pointer-events:none;';
   layout.classList.add('result-snapshot-layout');stage.append(layout);document.body.append(stage);

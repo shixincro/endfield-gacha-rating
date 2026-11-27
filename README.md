@@ -25,7 +25,7 @@
 | 页面 | 内容 |
 | --- | --- |
 | [算法总览](docs/ALGORITHMS.md) | 六轴怎么看、计算边界与模块版本 |
-| [角色欧非](docs/CHARACTER_SCORING.md) | 大保底区、无大保底区、加急合分、歪 New 修正与五星校准 |
+| [角色欧非](docs/CHARACTER_SCORING.md) | 120保底区、无120保底区、加急合分、歪 New 修正与五星校准 |
 | [武器欧非](docs/WEAPON_SCORING.md) | 六星武器和当期专武的十池参照、潜能与直赠 |
 | [规划亏损](docs/PLANNING_LOSS.md) | 期望、机会和实际亏损，逐池结算与示例 |
 | [导入与账本](docs/RECORD_FORMAT.md) | 赠品、数据缺项、中断修正与假设保底 |

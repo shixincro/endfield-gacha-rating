@@ -275,9 +275,11 @@ function scoreResults(record,validated,catalog,{flat,fallback}={}) {
   result.coverage={...validated.coverage,unfinishedSixDraws:data.tails.reduce((n,s)=>n+s.draws,0),
     sixTailPolicy:flatAxes.includes('characterSix')?'abc-attributed-or-pending':'included-in-total-draw-budget-without-inventing-a-six',
     limitedPartialHistoryCompatibility:!!result.axes.limited.details?.partialHistoryCompatibility};
+  const actualLimited=flatAxes.includes('limited')?flat.actual.byAxis.limited:null;
   result.effectiveCounts={mainSix:data.six.length,forcedSixIncluded:data.six.filter(s=>s.forced).length,
     mainUp:data.actualMainUp,rushSix:data.rushSix,rushUp:data.rushUp,
-    mainLimitedWeight:data.mainWeight,rushLimitedWeight:data.rushWeight};
+    mainLimitedWeight:actualLimited?actualLimited.A.limited+actualLimited.B.limited:data.mainWeight,
+    rushLimitedWeight:actualLimited?flat.actual.C.limited:data.rushWeight};
   result.segments=[...data.six.map(({entries,...s})=>({...s,kind:'complete-six-cycle'})),
     ...data.tails.map(s=>({...s,kind:'unfinished-six-cycle'}))];
   result.warnings=result.warnings.filter(w=>!w.startsWith('期初水位未知：六星等待评分跳过'));

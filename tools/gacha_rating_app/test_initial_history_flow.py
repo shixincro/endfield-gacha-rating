@@ -57,16 +57,18 @@ class InitialHistoryFlowTests(unittest.TestCase):
         self.assertGreater(new['axes']['limited']['score'],
                            duplicate['axes']['limited']['score'])
 
-    def test_collection_resolves_planning_effective_acquisition(self):
+    def test_collection_new_status_does_not_change_eligible_limited_stop(self):
         unknown = self.score_without_mutation(
             ledger([pool(8, 70, [(70, '卡缪')])]))['planning']['pools'][0]
         new = self.score_without_mutation(
             ledger([pool(8, 70, [(70, '卡缪')])], owned=[]))['planning']['pools'][0]
         duplicate = self.score_without_mutation(
             ledger([pool(8, 70, [(70, '卡缪')])], owned=['卡缪']))['planning']['pools'][0]
-        self.assertEqual(unknown['status'], 'partial')
+        self.assertEqual(unknown['status'], 'ok')
         self.assertEqual(unknown['unknownNewPositions'], [70])
-        self.assertIsNone(unknown['localLoss'])
+        self.assertEqual(unknown['anchor']['kind'], 'limited')
+        self.assertEqual(unknown['idealStop'], 70)
+        self.assertEqual(unknown['localLoss'], 0)
         self.assertEqual(new['status'], 'ok')
         self.assertEqual(new['anchor']['kind'], 'new-limited')
         self.assertEqual(new['anchor']['character'], '卡缪')
@@ -74,8 +76,9 @@ class InitialHistoryFlowTests(unittest.TestCase):
         self.assertEqual(new['localLoss'], 0)
         self.assertEqual(duplicate['status'], 'ok')
         self.assertEqual(duplicate['newLimitedHits'], [])
-        self.assertEqual(duplicate['idealStop'], 10)
-        self.assertGreater(duplicate['localLoss'], 0)
+        self.assertEqual(duplicate['anchor']['kind'], 'limited')
+        self.assertEqual(duplicate['idealStop'], 70)
+        self.assertEqual(duplicate['localLoss'], 0)
 
     def test_late_first_account_pool_has_zero_pity_and_ten_free_draws(self):
         data = ledger([pool(8, 10, [(7, '诀')], initial=0, free=10)],
@@ -119,8 +122,9 @@ class InitialHistoryFlowTests(unittest.TestCase):
         self.assertEqual(excluded[0]['draws'], 20)
         self.assertEqual(excluded[0]['pool'], 'opening-test-10')
         row = result['planning']['pools'][1]
-        self.assertEqual(row['status'], 'partial')
-        self.assertIsNone(row['localLoss'])
+        self.assertEqual(row['status'], 'ok')
+        self.assertEqual(row['idealStop'], 20)
+        self.assertEqual(row['localLoss'], 0)
 
     def test_missing_middle_pool_keeps_new_unknown_even_with_known_pity(self):
         data = ledger([
@@ -135,9 +139,10 @@ class InitialHistoryFlowTests(unittest.TestCase):
         self.assertEqual(second['weight'], 1)
         self.assertEqual(result['axes']['characterSix']['details']['excludedOpeningSegments'], [])
         row = result['planning']['pools'][1]
-        self.assertEqual(row['status'], 'partial')
+        self.assertEqual(row['status'], 'ok')
         self.assertEqual(row['unknownNewPositions'], [20])
-        self.assertIsNone(row['localLoss'])
+        self.assertEqual(row['idealStop'], 20)
+        self.assertEqual(row['localLoss'], 0)
 
     def test_explicit_complete_history_can_bridge_zero_draw_banner_gap(self):
         data = ledger([
