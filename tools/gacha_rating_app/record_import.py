@@ -76,6 +76,13 @@ def _unknown_name(value):
 
 def _character_scope(definition, group):
     """Rerun and celebration records remain auxiliary, even with a reused name."""
+    source_group = definition.get('sourceGroup')
+    if source_group == 'E_CharacterGachaPoolType_Rerun':
+        return 'auxiliary-reprint'
+    if source_group == 'E_CharacterGachaPoolType_Joint':
+        return 'auxiliary-celebration'
+    if source_group in ('E_CharacterGachaPoolType_Standard', 'E_CharacterGachaPoolType_Beginner'):
+        return 'auxiliary-character'
     metadata = [definition]
     metadata.extend(row['sourceRow'] for row in group if isinstance(row.get('sourceRow'), dict))
     values = [str(definition.get(key, '')) for key in ('name', 'id', 'type', 'sourcePoolType', 'sourceGroup')]
@@ -250,6 +257,57 @@ def _parse_api(data, enduid=False):
     return rows, definitions, identity, 'enduid-json' if enduid else 'api-list-json', True, partial
 
 
+def _parse_bhaoo(data):
+    """Read Endfield Gacha's local account file or a WebDAV account bundle."""
+    account = data.get('account')
+    identity = {}
+    if 'schema_version' in data or 'account' in data:
+        if type(data.get('schema_version')) is not int or data['schema_version'] != 1 or not isinstance(account, dict):
+            raise ValueError('Endfield Gacha 的 WebDAV 单账号备份版本或账号信息无效。')
+        role = account.get('roleId')
+        if not isinstance(role, dict):
+            raise ValueError('Endfield Gacha 的 WebDAV 备份缺少游戏角色信息。')
+        identity = {'uid': _name(role.get('roleId')) or None, 'name': _name(role.get('nickName')),
+                    'server': _name(role.get('serverName') or role.get('serverId')) or None}
+
+    rows, definitions = [], {}
+    for kind, item_key in (('character', 'charName'), ('weapon', 'weaponName')):
+        groups = data.get(kind, {})
+        if not isinstance(groups, dict):
+            raise ValueError('Endfield Gacha 的记录须按角色类别或武器卡池分组。')
+        for group, raw_rows in groups.items():
+            if not isinstance(raw_rows, list) or not group.strip():
+                raise ValueError('Endfield Gacha 的卡池分组须为记录列表。')
+            for raw in raw_rows:
+                if not isinstance(raw, dict):
+                    raise ValueError('Endfield Gacha 的抽取记录须为对象。')
+                pid, banner = _name(raw.get('poolId')), _name(raw.get('poolName'))
+                if not pid or not banner or (kind == 'weapon' and pid != group):
+                    raise ValueError('Endfield Gacha 的记录缺少卡池信息或与所属分组不一致。')
+                definition = definitions.setdefault(pid, {'id': pid, 'name': banner, 'kind': kind,
+                    'sourceGroup': group, 'sourcePoolType': raw.get('poolType')})
+                if (definition['kind'], definition['name'], definition['sourceGroup']) != (kind, banner, group):
+                    raise ValueError('Endfield Gacha 的同一卡池 ID 出现互相冲突的定义。')
+                seq = _integer(raw.get('seqId'), '抽取序号', 1)
+                entry_kind = raw.get('kind')
+                is_gift = isinstance(entry_kind, str) and entry_kind.startswith('gift')
+                if not is_gift and entry_kind not in (None, '', 'draw'):
+                    raise ValueError('Endfield Gacha 有无法识别的抽取记录类型。')
+                name = _name(raw.get(item_key)) or _name(raw.get('nameText'))
+                if is_gift and kind == 'character' and (up := BANNERS.get(banner)):
+                    if name in (up + '的信物', up + '信物'):
+                        name = up
+                stamp = raw.get('gachaTs')
+                rows.append(_base_row(kind, banner, name, raw.get('rarity'),
+                    raw.get('isFree', False) if kind == 'character' and not is_gift else False,
+                    raw, poolId=pid, sourceId=f'{kind}:{seq}', sequence=seq, timestamp=stamp, batchId=stamp,
+                    isNew=raw.get('isNew'), explicitTicket=entry_kind == 'gift_intel_book' and kind == 'character',
+                    explicitReward=is_gift, explicitDraw=entry_kind == 'draw'))
+                if len(rows) > MAX_ROWS:
+                    raise ValueError(f'记录须包含1至{MAX_ROWS}条条目。')
+    return rows, definitions, identity, 'bhaoo-endfield-gacha-json', True, False
+
+
 def _sequence_evidence(rows, global_sequence, allow_cross_pool_duplicates=False):
     """Return observable sequence gaps, never add missing draws."""
     groups = defaultdict(list)
@@ -301,6 +359,10 @@ def import_record_text(text, filename='记录.json', *, confirmed_complete_pools
             raise UnsupportedRecordFormat()
         if source.get('formatId') == 'internal_json_v3':
             parsed = _parse_v3(source)
+        elif ('character' in source and 'weapon' in source or
+              any(key in source for key in ('character', 'weapon')) and
+              any(key in source for key in ('character_max_seqid', 'weapon_max_seqid'))):
+            parsed = _parse_bhaoo(source)
         elif isinstance(source.get('data'), dict) and 'list' in source['data']:
             parsed = _parse_api(source)
         elif 'uid' in source and isinstance(source.get('data'), dict) and all(isinstance(v,list) for v in source['data'].values()):
@@ -389,9 +451,9 @@ def import_record_text(text, filename='记录.json', *, confirmed_complete_pools
                 reward = 'next-banner-ticket'
             elif row.get('explicitReward'):
                 reward = 'explicit-gift'
-            elif kind == 'character' and not row['isRush'] and at == 60 and rarity == 3 and name in ('', '未知', '未知角色', '寻访情报书'):
+            elif not row.get('explicitDraw') and kind == 'character' and not row['isRush'] and at == 60 and rarity == 3 and name in ('', '未知', '未知角色', '寻访情报书'):
                 reward = 'next-banner-ticket'
-            elif extra and not row['isRush']:
+            elif not row.get('explicitDraw') and extra and not row['isRush']:
                 if kind == 'character' and at > 0 and at % 240 == 0 and name in ('', up):
                     reward = 'character-token'
                 elif kind == 'weapon' and at >= 180 and (at-180) % 160 == 0 and name in ('', up):
@@ -642,7 +704,7 @@ def import_record_text(text, filename='记录.json', *, confirmed_complete_pools
     for section in sections:
         copies.update(section['up'] for _ in section['signatureGifts'])
     skipped=sum(item['scoreScope'] in ('auxiliary-reprint','auxiliary-celebration') for item in auxiliary)
-    if not pools and not sections and not skipped:
+    if not pools and not sections and not skipped and not (format_id == 'bhaoo-endfield-gacha-json' and auxiliary):
         raise ValueError('文件内没有当前支持的常规限定角色池或已出货武器池；原文件未导入。')
     weapon = None
     if sections:

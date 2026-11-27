@@ -39,6 +39,86 @@ def v3_row(pid, seq, name='四星角色', rarity=4, **extra):
 
 
 class RecordImportTests(unittest.TestCase):
+    def test_bhaoo_local_file_keeps_gifts_and_rush_separate_from_draws(self):
+        character_id, weapon_id = 'special_char_demo', 'weponbox_demo'
+        character = [api_row(seq, poolId=character_id) for seq in range(1, 252)]
+        character[19].update(charName='莱万汀', rarity=6, kind='draw')
+        for row in character[30:40]:
+            row.update(isFree=True, kind='draw')
+        character[36].update(charName='莱万汀', rarity=6)
+        character[70].update(charName='', rarity=None, kind='gift_intel_book', nameText='寻访情报书')
+        character.append(api_row(252, '', 6, poolId=character_id, kind='gift_char_token', nameText='莱万汀的信物'))
+        weapon = [api_row(seq, '四星武器', 4, '熔铸申领', weapon=True, poolId=weapon_id)
+                  for seq in range(1, 183)]
+        weapon[9].update(weaponName='熔铸火焰', rarity=6, kind='draw')
+        weapon[100].update(weaponName='', rarity=6, kind='gift_weapon_box', nameText='补充武库箱')
+        weapon[-1].update(weaponName='熔铸火焰', rarity=6, kind='gift_weapon')
+        source = {'character_max_seqid': '252', 'weapon_max_seqid': '182',
+                  'character': {'E_CharacterGachaPoolType_Special': character[::-1]},
+                  'weapon': {weapon_id: weapon[::-1]}}
+        session = convert(source)
+        self.assertEqual(session['importMethod'], 'bhaoo-endfield-gacha-json')
+        self.assertEqual(session['importSummary']['sourceRows'], 434)
+        pool = session['ledger']['character']['pools'][0]
+        self.assertEqual((pool['total'], pool['rushUsed'], pool['rushAt'], pool['quota']), (240, True, 30, 8960))
+        self.assertEqual([e['at'] for e in pool['events']], [20])
+        self.assertEqual([e['character'] for e in pool['rush']], ['莱万汀'])
+        self.assertEqual(len(pool['tokens']), 1)
+        result_weapon = session['ledger']['weapon']
+        self.assertEqual((result_weapon['N'], result_weapon['K6'], result_weapon['KU']), (180, 1, 1))
+        section = result_weapon['sections'][0]
+        self.assertEqual([gift['at'] for gift in section['excludedRewards']], [100, 180])
+        self.assertEqual([gift['at'] for gift in section['signatureGifts']], [180])
+        self.assertEqual(session['documents'][0]['sourceExport'], source)
+
+    def test_bhaoo_webdav_bundle_uses_game_role_and_auxiliary_categories(self):
+        source = {'schema_version': 1, 'account': {'uid': 'login-id', 'provider': 'gryphline',
+                   'roleId': {'roleId': 'game-id', 'nickName': '演示账号', 'serverName': '亚服'}},
+                  'character': {
+                      'E_CharacterGachaPoolType_Special': [api_row(1, '莱万汀', 6, poolId='special')],
+                      'E_CharacterGachaPoolType_Rerun': [api_row(2, '莱万汀', 6, poolId='rerun')],
+                      'E_CharacterGachaPoolType_Joint': [api_row(3, '莱万汀', 6, poolId='joint')],
+                      'E_CharacterGachaPoolType_Standard': [api_row(4, poolId='standard')],
+                      'E_CharacterGachaPoolType_Beginner': [api_row(5, poolId='beginner')],
+                  }, 'weapon': {}, 'character_rerun_info': {'rerun': 300}}
+        session = convert(source)
+        self.assertEqual(session['ledger']['identity'], {'uid': 'game-id', 'name': '演示账号', 'server': '亚服'})
+        self.assertEqual([p['total'] for p in session['ledger']['character']['pools']], [1])
+        auxiliary = session['documents'][0]['auxiliaryRecords']
+        self.assertEqual([(p['scoreScope'], p['main']) for p in auxiliary], [
+            ('auxiliary-reprint', 1), ('auxiliary-celebration', 1),
+            ('auxiliary-character', 1), ('auxiliary-character', 1),
+        ])
+
+    def test_bhaoo_partial_export_does_not_use_watermark_as_draw_count(self):
+        source = {'character_max_seqid': '8500', 'character': {'E_CharacterGachaPoolType_Special': [
+            api_row(500, poolId='special'),
+        ]}}
+        session = convert(source)
+        pool = session['ledger']['character']['pools'][0]
+        self.assertEqual(pool['total'], 1)
+        self.assertIsNone(pool['initialPity'])
+        self.assertIsNone(pool['tail'])
+        self.assertFalse(session['ledger']['character']['completeHistory'])
+
+    def test_bhaoo_explicit_draw_is_not_treated_as_an_extra_reward(self):
+        rows = [api_row(seq, poolId='special', kind='draw') for seq in range(1, 242)]
+        for row in rows[-11:]:
+            row['gachaTs'] = '241'
+        for seq in (40, 80, 120, 160, 200, 241):
+            rows[seq - 1].update(charName='莱万汀', rarity=6)
+        session = convert({'character': {'E_CharacterGachaPoolType_Special': rows}, 'weapon': {}})
+        pool = session['ledger']['character']['pools'][0]
+        self.assertEqual((pool['total'], pool['events'][-1]['at']), (241, 241))
+        self.assertEqual(session['documents'][0]['importAudit'][0]['rewards'], [])
+
+    def test_bhaoo_rejects_duplicate_sequences_and_invalid_bundle(self):
+        source = {'character': {'E_CharacterGachaPoolType_Special': [api_row(1), api_row(1)]}, 'weapon': {}}
+        with self.assertRaisesRegex(ValueError, '序号重复'):
+            convert(source)
+        with self.assertRaisesRegex(ValueError, 'WebDAV'):
+            convert({**source, 'schema_version': 2, 'account': {'roleId': {}}})
+
     def test_txt_and_bare_batch_json_use_shifted_rarity(self):
         batch={'1':{'p':'熔火灼痕','c':[['莱万汀',5,1,0]]},
                '2':{'p':'熔铸申领','c':[['熔铸火焰',5,1]]}}

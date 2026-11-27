@@ -4,7 +4,9 @@
 
 ## 从原始记录到账本
 
-应用可从支持的小黑盒截图读取出货，也可导入批次 TXT/JSON、`data.list` 接口导出、`internal_json_v3` 和 EndUID 分组 JSON。内部统一使用 `gacha-ledger-v1` 账本。`gacha-rating-session-v1` 备份还包含来源和评分设置，可在应用里恢复。
+应用可从支持的小黑盒截图读取出货，也可导入批次 TXT/JSON、`data.list` 接口导出、`internal_json_v3`、EndUID 分组 JSON 和 Endfield Gacha（bhaoo）JSON。内部统一使用 `gacha-ledger-v1` 账本。`gacha-rating-session-v1` 备份还包含来源和评分设置，可在应用里恢复。
+
+Endfield Gacha 的 `userData/gachaData/<账号键>.json` 本机记录和 WebDAV 同步目录下 `accounts/<账号键>.json` 单账号备份都可通过首页或「本机历史记录 → 导入 TXT / JSON」读取。角色记录按行内池 ID 整理。重构、辉光庆典、基础和启程角色池作为辅助记录保留。`isFree: true` 的角色加急单列，`kind` 以 `gift` 开头的赠品单列，两者均不计入主池抽数。 [上游本机记录](https://github.com/bhaoo/endfield-gacha/blob/master/src-tauri/src/lib.rs#L631-L699) · [上游 WebDAV 结构](https://github.com/bhaoo/endfield-gacha/blob/master/src-tauri/src/webdav.rs#L101-L138)
 
 原始条目、截图证据和人工修正分别保留。导入器按来源格式解释稀有度、加急和赠品。位置、角色身份和前后水位冲突时，应用会要求核对。手动补充记录可更新相连卡池的派生水位，截图中的「已垫」只是原记录推算值。
 

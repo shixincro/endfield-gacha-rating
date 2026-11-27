@@ -90,7 +90,9 @@ py -3.12 -m venv .venv
 
 首页和“本机历史记录”中的“导入 TXT / JSON”均可导入第三方记录或恢复本工具的备份。可以先导入 [`examples/demo-session.json`](examples/demo-session.json) 体验功能，它是人工构造的演示数据。复刻池和辉光庆典作为辅助记录保存，暂不参与评分；仅含这类池的文件也能保存。
 
-目前适配批次 TXT、按时间戳分组的 JSON（裸对象或 `info/data` 包装）、`data.list` 接口导出、`internal_json_v3`（含 generator）及 EndUID 分组 JSON。扩展名不决定格式，例如正文是 JSON 的 TXT 也能读取。本工具的 `gacha-rating-session-v1` 单人记录与 `gacha-rating-collection-v1` 合集仍可恢复。
+目前适配批次 TXT、按时间戳分组的 JSON（裸对象或 `info/data` 包装）、`data.list` 接口导出、`internal_json_v3`（含 generator）、EndUID 分组 JSON，以及 Endfield Gacha（bhaoo）的本机记录和 WebDAV 单账号备份。扩展名不决定格式，例如正文是 JSON 的 TXT 也能读取。本工具的 `gacha-rating-session-v1` 单人记录与 `gacha-rating-collection-v1` 合集仍可恢复。
+
+Endfield Gacha 用户可在原工具的数据目录中选择 `userData/gachaData/<账号键>.json`（Windows 的 `userData` 位于程序同目录），或选择 WebDAV 同步目录下 `accounts/<账号键>.json` 的单账号备份。两者都可使用上述任一导入入口。 [Endfield Gacha 数据目录](https://github.com/bhaoo/endfield-gacha#数据存储位置)
 
 单份第三方文件最多 8 MB，含多账号时请分别导出。池起点和奖励位置可确认时，赠券、信物或武器赠品节点恰好缺 1 个序号、且未列出对应奖励，会按漏导赠品处理并保留推断依据；不增加实际抽数、抽出的六星或配额。其他缺口、未知出货和不明 UP 映射仍需核对。无原图记录的亏损详情会显示文字出货表。
 
